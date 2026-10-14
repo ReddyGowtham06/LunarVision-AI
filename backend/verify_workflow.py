@@ -9,12 +9,26 @@ Validates that:
 """
 
 import io
+import os
+import sys
 import base64
 import numpy as np
 import cv2
 import tifffile
 from fastapi.testclient import TestClient
-from backend.main import app
+
+# Ensure both current directory and parent directory are on sys.path
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PARENT_DIR = os.path.dirname(BASE_DIR)
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+if PARENT_DIR not in sys.path:
+    sys.path.insert(0, PARENT_DIR)
+
+try:
+    from backend.main import app
+except (ImportError, ModuleNotFoundError):
+    from main import app
 
 client = TestClient(app)
 

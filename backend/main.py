@@ -4,11 +4,13 @@ Backend API Service powered by FastAPI, OpenCV, and NumPy.
 """
 
 import os
+import sys
 import io
 import uuid
 import base64
 import time
-from typing import Optional, Dict, Any
+import tempfile
+from typing import Optional, Dict, Any, Tuple
 import numpy as np
 import cv2
 from fastapi import FastAPI, UploadFile, File, Form, Query, HTTPException, status
@@ -16,18 +18,42 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.enhancer import LunarImageEnhancer
-from backend.sample_data import (
-    get_samples_catalog,
-    get_sample_filepath,
-    ensure_samples_cached,
-    VERIFIED_SAMPLES
-)
-
-# Workspace directories
+# Ensure both current directory (for Vercel Root Directory = 'backend')
+# and parent directory (for monorepo root execution) are on sys.path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")
-CACHE_DIR = os.path.join(BASE_DIR, "cache")
+PARENT_DIR = os.path.dirname(BASE_DIR)
+
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+if PARENT_DIR not in sys.path:
+    sys.path.insert(0, PARENT_DIR)
+
+try:
+    from backend.enhancer import LunarImageEnhancer
+    from backend.sample_data import (
+        get_samples_catalog,
+        get_sample_filepath,
+        ensure_samples_cached,
+        VERIFIED_SAMPLES
+    )
+except (ImportError, ModuleNotFoundError):
+    from enhancer import LunarImageEnhancer
+    from sample_data import (
+        get_samples_catalog,
+        get_sample_filepath,
+        ensure_samples_cached,
+        VERIFIED_SAMPLES
+    )
+
+# Workspace directories (serverless-aware for Vercel read-only filesystem)
+if os.environ.get("VERCEL") or not os.access(BASE_DIR, os.W_OK):
+    TEMP_DIR = tempfile.gettempdir()
+    UPLOADS_DIR = os.path.join(TEMP_DIR, "lunarvision_uploads")
+    CACHE_DIR = os.path.join(TEMP_DIR, "lunarvision_cache")
+else:
+    UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")
+    CACHE_DIR = os.path.join(BASE_DIR, "cache")
+
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(CACHE_DIR, exist_ok=True)
 
@@ -63,6 +89,17 @@ def startup_event():
         ensure_samples_cached()
     except Exception as e:
         print(f"Warning: sample pre-cache failed: {e}")
+
+
+@app.get("/")
+def root():
+    """Root endpoint for Vercel deployment health diagnostics."""
+    return {
+        "service": "LunarVision AI Scientific Backend",
+        "status": "operational",
+        "docs_url": "/docs",
+        "health_url": "/api/health"
+    }
 
 
 @app.get("/api/health")
