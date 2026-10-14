@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+  
+  body {
+    @apply bg-obsidian-950 text-lunar-200 antialiased font-sans m-0 p-0 overflow-hidden select-none;
+  }
+
+  /* Scientific Range Input Styling */
+  input[type="range"] {
+    @apply appearance-none bg-obsidian-750 h-1.5 rounded-full cursor-pointer outline-none transition-all;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    @apply appearance-none w-3.5 h-3.5 rounded-full bg-observatory-cyan border border-white/80 shadow-md cursor-pointer transition-transform hover:scale-125;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    @apply appearance-none w-3.5 h-3.5 rounded-full bg-observatory-cyan border border-white/80 shadow-md cursor-pointer transition-transform hover:scale-125;
+  }
+
+  /* Custom Scientific Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #090c12;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #1e293b;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #334155;
+  }
+}
+
+/* Subtle crosshair grid for observatory viewport */
+.observatory-grid {
+  background-size: 32px 32px;
+  background-image: 
+    linear-gradient(to right, rgba(38, 49, 69, 0.25) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(38, 49, 69, 0.25) 1px, transparent 1px);
+}
