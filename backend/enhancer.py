@@ -191,12 +191,12 @@ class LunarImageEnhancer:
         else:
             bg_floor_l = p95_border_l
 
-        erode_px = max(3, int(min(h, w) * 0.006))
+        erode_px = max(1, int(min(h, w) * 0.0015))
         core_eroded = cv2.erode(
             filled_body,
             cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (erode_px * 2 + 1, erode_px * 2 + 1))
         )
-        feather_core = max(9, int(min(h, w) * 0.025) | 1)
+        feather_core = max(5, int(min(h, w) * 0.008) | 1)
         core_mask = cv2.GaussianBlur(core_eroded.astype(np.float32) / 255.0, (feather_core, feather_core), 0)
 
         dilate_px = max(3, int(min(h, w) * 0.008))
@@ -252,15 +252,15 @@ class LunarImageEnhancer:
         cls,
         img: np.ndarray,
         brightness: float = 0.0,
-        contrast: float = 1.08,
-        gamma: float = 0.98,
-        clahe_clip_limit: float = 2.8,
+        contrast: float = 1.14,
+        gamma: float = 0.96,
+        clahe_clip_limit: float = 3.0,
         clahe_grid_size: int = 8,
-        shadow_boost: float = 8.0,
-        denoise_strength: float = 3.0,
-        denoise_method: str = "bilateral",
-        sharpen_strength: float = 0.95,
-        sharpen_radius: float = 1.2,
+        shadow_boost: float = 6.0,
+        denoise_strength: float = 0.0,
+        denoise_method: str = "none",
+        sharpen_strength: float = 1.50,
+        sharpen_radius: float = 0.9,
         crater_clarity: float = 1.25,
         monochrome_output: bool = False,
         space_bg_cleanup: bool = True
@@ -287,8 +287,8 @@ class LunarImageEnhancer:
 
         base_lum = lum_f32.copy()
 
-        # Step 2: Denoise filtering (run early so noise floor isn't amplified)
-        if denoise_strength > 0.5 and denoise_method != "none":
+        # Step 2: Denoise filtering (bypassed by default to preserve micro-relief)
+        if denoise_strength > 0.0 and denoise_method != "none":
             d_val = float(denoise_strength)
             lum_u8 = np.clip(np.round(lum_f32), 0, 255).astype(np.uint8)
             if denoise_method == "bilateral":
@@ -341,19 +341,13 @@ class LunarImageEnhancer:
         toned_f32 = np.clip(toned_f32, 0.0, 255.0)
         lum_f32 = base_lum * (1.0 - object_mask) + toned_f32 * object_mask
 
-        # Step 7: Dual-Radius Unsharp Mask with Noise Coring
+        # Step 7: Dual-Scale Unsharp Masking without Destructive Coring
         if sharpen_strength > 0.05:
             amount = float(sharpen_strength)
-            rad = max(0.5, min(5.0, float(sharpen_radius)))
-            k_size = int(round(rad * 2.0)) * 2 + 1
-            k_size = max(3, min(15, k_size))
-            blurred_med = cv2.GaussianBlur(lum_f32, (k_size, k_size), rad)
-            blurred_fine = cv2.GaussianBlur(lum_f32, (3, 3), 0.75)
-            detail = (lum_f32 - blurred_med) * 0.70 + (lum_f32 - blurred_fine) * 0.45
-            abs_detail = np.abs(detail)
-            cored_detail = np.sign(detail) * np.maximum(0.0, abs_detail - 0.35)
-            cored_detail = np.clip(cored_detail, -32.0, 32.0)
-            lum_f32 = np.clip(lum_f32 + amount * cored_detail * core_mask, 0.0, 255.0)
+            blurred_fine = cv2.GaussianBlur(lum_f32, (3, 3), 0.8)
+            blurred_med = cv2.GaussianBlur(lum_f32, (7, 7), 2.2)
+            detail = (lum_f32 - blurred_fine) * 0.75 + (lum_f32 - blurred_med) * 0.45
+            lum_f32 = np.clip(lum_f32 + amount * detail * core_mask, 0.0, 255.0)
 
         # Step 8: Deep-Space Background Floor Stabilization (Locks space outside corona to pure 0.00 DN)
         if space_bg_cleanup and seg_mode == "isolated_body":

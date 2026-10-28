@@ -27,15 +27,15 @@ import {
 
 const DEFAULT_PARAMS: EnhancementParameters = {
   brightness: 0,
-  contrast: 1.08,
-  gamma: 0.98,
-  clahe_clip_limit: 2.8,
+  contrast: 1.14,
+  gamma: 0.96,
+  clahe_clip_limit: 3.0,
   clahe_grid_size: 8,
-  shadow_boost: 8,
-  denoise_strength: 3,
-  denoise_method: 'bilateral',
-  sharpen_strength: 0.95,
-  sharpen_radius: 1.2,
+  shadow_boost: 6,
+  denoise_strength: 0,
+  denoise_method: 'none',
+  sharpen_strength: 1.50,
+  sharpen_radius: 0.9,
   crater_clarity: 1.25,
   monochrome_output: false,
   space_bg_cleanup: true
@@ -45,22 +45,71 @@ const STUDIO_PRESETS: Record<string, { name: string; subtitle: string; params: E
   eclipse_master: {
     name: 'Eclipse & Blood Moon',
     subtitle: 'Rich Maria & 0.00 DN Velvet Space',
-    params: { ...DEFAULT_PARAMS, clahe_clip_limit: 2.8, sharpen_strength: 0.95, crater_clarity: 1.25, shadow_boost: 8, contrast: 1.08, gamma: 0.98, space_bg_cleanup: true }
+    params: {
+      ...DEFAULT_PARAMS,
+      denoise_strength: 0,
+      denoise_method: 'none',
+      clahe_clip_limit: 3.2,
+      sharpen_strength: 1.6,
+      sharpen_radius: 0.9,
+      crater_clarity: 1.25,
+      shadow_boost: 6,
+      contrast: 1.14,
+      gamma: 0.96,
+      space_bg_cleanup: true
+    }
   },
   psr_shadow: {
     name: 'PSR Deep Shadow',
     subtitle: 'Terminator Crater Floor Recovery',
-    params: { ...DEFAULT_PARAMS, clahe_clip_limit: 3.6, sharpen_strength: 1.1, crater_clarity: 1.45, shadow_boost: 42, contrast: 1.12, gamma: 0.84, space_bg_cleanup: true }
+    params: {
+      ...DEFAULT_PARAMS,
+      denoise_strength: 0,
+      denoise_method: 'none',
+      clahe_clip_limit: 3.6,
+      sharpen_strength: 1.5,
+      sharpen_radius: 0.9,
+      crater_clarity: 1.45,
+      shadow_boost: 42,
+      contrast: 1.12,
+      gamma: 0.84,
+      space_bg_cleanup: true
+    }
   },
   tycho_crisp: {
     name: 'Tycho Ray Micro-Relief',
     subtitle: 'High-Definition Ejecta & Rims',
-    params: { ...DEFAULT_PARAMS, clahe_clip_limit: 3.3, sharpen_strength: 1.55, sharpen_radius: 1.1, crater_clarity: 1.85, shadow_boost: 12, contrast: 1.16, gamma: 0.96, space_bg_cleanup: true }
+    params: {
+      ...DEFAULT_PARAMS,
+      denoise_strength: 0,
+      denoise_method: 'none',
+      clahe_clip_limit: 3.5,
+      sharpen_strength: 1.85,
+      sharpen_radius: 0.85,
+      crater_clarity: 1.85,
+      shadow_boost: 12,
+      contrast: 1.18,
+      gamma: 0.96,
+      space_bg_cleanup: true
+    }
   },
   lroc_mono: {
     name: 'LROC Albedo Mono',
     subtitle: 'Single-Band Calibrated Photometry',
-    params: { ...DEFAULT_PARAMS, clahe_clip_limit: 3.0, sharpen_strength: 1.15, crater_clarity: 1.35, shadow_boost: 15, contrast: 1.14, gamma: 0.95, monochrome_output: true, space_bg_cleanup: true }
+    params: {
+      ...DEFAULT_PARAMS,
+      denoise_strength: 0,
+      denoise_method: 'none',
+      clahe_clip_limit: 3.0,
+      sharpen_strength: 1.5,
+      sharpen_radius: 0.9,
+      crater_clarity: 1.35,
+      shadow_boost: 15,
+      contrast: 1.14,
+      gamma: 0.95,
+      monochrome_output: true,
+      space_bg_cleanup: true
+    }
   }
 };
 
