@@ -247,17 +247,17 @@ class LunarImageEnhancer:
     def enhance_image(
         cls,
         img: np.ndarray,
-        brightness: float = 0.0,
-        contrast: float = 1.14,
-        gamma: float = 0.96,
-        clahe_clip_limit: float = 3.0,
+        brightness: float = -6.0,
+        contrast: float = 1.04,
+        gamma: float = 1.06,
+        clahe_clip_limit: float = 1.7,
         clahe_grid_size: int = 8,
-        shadow_boost: float = 6.0,
-        denoise_strength: float = 0.0,
-        denoise_method: str = "none",
-        sharpen_strength: float = 1.50,
+        shadow_boost: float = 0.0,
+        denoise_strength: float = 4.0,
+        denoise_method: str = "bilateral",
+        sharpen_strength: float = 0.50,
         sharpen_radius: float = 0.9,
-        crater_clarity: float = 1.25,
+        crater_clarity: float = 0.65,
         monochrome_output: bool = False,
         space_bg_cleanup: bool = True
     ) -> Tuple[np.ndarray, Dict[str, Any]]:
@@ -312,24 +312,23 @@ class LunarImageEnhancer:
             lifted = norm_lum + boost_amount * weight * core_mask
             lum_f32 = np.clip(lifted * 255.0, 0.0, 255.0)
 
-        # Step 4: 256-Bin Adaptive CLAHE blended at 0.78 clahe + 0.22 lum inside core_mask
+        # Step 4: 256-Bin Adaptive CLAHE blended softly at 0.55 clahe + 0.45 lum inside core_mask
         if clahe_clip_limit > 0.0:
             grid_s = max(2, min(32, int(clahe_grid_size)))
             clahe = cv2.createCLAHE(clipLimit=max(0.1, float(clahe_clip_limit)), tileGridSize=(grid_s, grid_s))
             clahe_u8 = clahe.apply(np.clip(np.round(lum_f32), 0, 255).astype(np.uint8))
             clahe_f32 = clahe_u8.astype(np.float32)
-            clahe_blended = clahe_f32 * 0.78 + lum_f32 * 0.22
+            clahe_blended = clahe_f32 * 0.55 + lum_f32 * 0.45
             lum_f32 = lum_f32 * (1.0 - core_mask) + clahe_blended * core_mask
 
-        # Step 5: Multi-Scale Crater Clarity & Rim Micro-Relief (Extracts and boosts fine topographic textures)
+        # Step 5: Multi-Scale Crater Clarity & Rim Micro-Relief (scaled down by 45%)
         if crater_clarity > 0.05:
             c_amount = float(crater_clarity)
             micro_blur = cv2.GaussianBlur(lum_f32, (3, 3), 0.8)
             macro_blur = cv2.GaussianBlur(lum_f32, (9, 9), 2.5)
-            # Band-pass difference to isolate crater walls, rilles, and ejecta rims
-            crater_relief = (lum_f32 - micro_blur) * 0.85 + (micro_blur - macro_blur) * 0.60
-            crater_cored = np.sign(crater_relief) * np.maximum(0.0, np.abs(crater_relief) - 0.25)
-            crater_boosted = np.clip(crater_cored * c_amount, -28.0, 28.0)
+            crater_relief = ((lum_f32 - micro_blur) * 0.85 + (micro_blur - macro_blur) * 0.60) * 0.55
+            crater_cored = np.sign(crater_relief) * np.maximum(0.0, np.abs(crater_relief) - 0.50)
+            crater_boosted = np.clip(crater_cored * c_amount, -16.0, 14.0)
             lum_f32 = np.clip(lum_f32 + crater_boosted * core_mask, 0.0, 255.0)
 
         # Step 6: Radiometric Tone Curve (Gamma, Contrast & Brightness)
@@ -342,24 +341,27 @@ class LunarImageEnhancer:
         toned_f32 = np.clip(toned_f32, 0.0, 255.0)
         lum_f32 = base_lum * (1.0 - object_mask) + toned_f32 * object_mask
 
-        # Step 7: Multi-Scale Coring Unsharp Mask (sigma 1.8 med, sigma 0.8 fine)
+        # Step 7: Restrained Multi-Scale Coring Unsharp Mask
         if sharpen_strength > 0.05:
             amount = float(sharpen_strength)
             blurred_fine = cv2.GaussianBlur(lum_f32, (3, 3), 0.8)
             blurred_med = cv2.GaussianBlur(lum_f32, (7, 7), 1.8)
-            detail = (lum_f32 - blurred_med) * (0.75 * amount) + (lum_f32 - blurred_fine) * (0.55 * amount)
+            detail = ((lum_f32 - blurred_med) * (0.75 * amount) + (lum_f32 - blurred_fine) * (0.55 * amount)) * 0.55
             abs_detail = np.abs(detail)
-            cored_detail = np.sign(detail) * np.maximum(0.0, abs_detail - 0.35)
-            cored_detail = np.clip(cored_detail, -32.0, 32.0)
+            cored_detail = np.sign(detail) * np.maximum(0.0, abs_detail - 0.80)
+            cored_detail = np.clip(cored_detail, -16.0, 14.0)
             lum_f32 = np.clip(lum_f32 + cored_detail * core_mask, 0.0, 255.0)
 
-        # Step 8: Additive Luminance Delta Color Recomposition with 3-Zone Space Mask
-        delta = (lum_f32 - l0) * core_mask
+        # Step 8: Additive Luminance Delta Color Recomposition with Highlight Roll-Off
+        raw_delta = (lum_f32 - l0) * core_mask
+        delta = np.where(raw_delta > 0, raw_delta * 0.50, raw_delta * 0.80)
         mask_w = object_mask if (space_bg_cleanup and seg_mode == "isolated_body") else np.ones_like(l0)
 
         if is_color and not monochrome_output:
-            b_out = np.clip(np.round((b_f32 + delta) * mask_w), 0, 255).astype(np.uint8)
-            g_out = np.clip(np.round((g_f32 + delta) * mask_w), 0, 255).astype(np.uint8)
+            chroma_delta_g = np.where(delta > 0, delta * 0.65, delta)
+            chroma_delta_b = np.where(delta > 0, delta * 0.55, delta)
+            b_out = np.clip(np.round((b_f32 + chroma_delta_b) * mask_w), 0, 255).astype(np.uint8)
+            g_out = np.clip(np.round((g_f32 + chroma_delta_g) * mask_w), 0, 255).astype(np.uint8)
             r_out = np.clip(np.round((r_f32 + delta) * mask_w), 0, 255).astype(np.uint8)
             enhanced_img = cv2.merge([b_out, g_out, r_out])
         else:

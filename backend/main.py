@@ -219,17 +219,17 @@ def get_image_by_id(image_id: str) -> Tuple[np.ndarray, Dict[str, Any]]:
 @app.post("/enhance")
 def process_enhancement(
     image_id: str = Form(...),
-    brightness: float = Form(0.0),
-    contrast: float = Form(1.14),
-    gamma: float = Form(0.96),
-    clahe_clip_limit: float = Form(3.0),
+    brightness: float = Form(-6.0),
+    contrast: float = Form(1.04),
+    gamma: float = Form(1.06),
+    clahe_clip_limit: float = Form(1.7),
     clahe_grid_size: int = Form(8),
-    shadow_boost: float = Form(6.0),
-    denoise_strength: float = Form(0.0),
-    denoise_method: str = Form("none"),
-    sharpen_strength: float = Form(1.50),
+    shadow_boost: float = Form(0.0),
+    denoise_strength: float = Form(4.0),
+    denoise_method: str = Form("bilateral"),
+    sharpen_strength: float = Form(0.50),
     sharpen_radius: float = Form(0.9),
-    crater_clarity: float = Form(1.25),
+    crater_clarity: float = Form(0.65),
     monochrome_output: bool = Form(False),
     space_bg_cleanup: bool = Form(True)
 ):

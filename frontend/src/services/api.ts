@@ -356,16 +356,16 @@ async function applyClientFallbackEnhancement(
             const bottom = c01 * (1 - wx) + c11 * wx;
             const claheVal = top * (1 - wy) + bottom * wy;
 
-            const blended = claheVal * 0.78 + L0[idx] * 0.22;
+            const blended = claheVal * 0.55 + L0[idx] * 0.45;
             L_clahe[idx] = blended * coreMask[idx] + L0[idx] * (1.0 - coreMask[idx]);
           }
         }
 
         // 5. Shadow boost inside coreMask, Gamma, Contrast & Brightness -> L_toned
         const shadowBoost = ((params.shadow_boost || 0) / 100) * 0.45;
-        const gamma = Math.max(0.1, Math.min(4.0, params.gamma || 0.96));
-        const contrast = Math.max(0.1, Math.min(3.0, params.contrast || 1.14));
-        const brightness = Math.max(-100, Math.min(100, params.brightness || 0));
+        const gamma = Math.max(0.1, Math.min(4.0, params.gamma || 1.06));
+        const contrast = Math.max(0.1, Math.min(3.0, params.contrast || 1.04));
+        const brightness = Math.max(-100, Math.min(100, params.brightness !== undefined ? params.brightness : -6));
 
         const L_toned = new Float32Array(numPixels);
         for (let i = 0; i < numPixels; i++) {
@@ -381,7 +381,7 @@ async function applyClientFallbackEnhancement(
           L_toned[i] = L0[i] * (1.0 - objectMask[i]) + toned * objectMask[i];
         }
 
-        // 6. Multi-scale unsharp masking + micro-relief with noise coring
+        // 6. Restrained multi-scale unsharp masking + micro-relief with noise coring
         function separableBoxBlur(input: Float32Array, w: number, h: number, radius: number): Float32Array {
           const temp = new Float32Array(w * h);
           const out = new Float32Array(w * h);
@@ -423,19 +423,20 @@ async function applyClientFallbackEnhancement(
 
         const blurFine = separableBoxBlur(L_toned, targetW, targetH, 1);
         const blurMed = separableBoxBlur(L_toned, targetW, targetH, 3);
-        const sharpenStrength = params.sharpen_strength || 1.5;
+        const sharpenStrength = params.sharpen_strength !== undefined ? params.sharpen_strength : 0.50;
+        const craterClarity = params.crater_clarity !== undefined ? params.crater_clarity : 0.65;
 
         const L_enh = new Float32Array(numPixels);
         for (let i = 0; i < numPixels; i++) {
-          const detail = (L_toned[i] - blurMed[i]) * (0.75 * sharpenStrength) +
-                         (L_toned[i] - blurFine[i]) * (0.55 * sharpenStrength);
+          const detail = ((L_toned[i] - blurMed[i]) * (0.75 * sharpenStrength * (craterClarity * 0.8)) +
+                          (L_toned[i] - blurFine[i]) * (0.55 * sharpenStrength)) * 0.55;
           const absD = Math.abs(detail);
-          let cored = Math.sign(detail) * Math.max(0, absD - 0.35);
-          cored = Math.max(-32.0, Math.min(32.0, cored));
+          let cored = Math.sign(detail) * Math.max(0, absD - 0.80);
+          cored = Math.max(-16.0, Math.min(14.0, cored));
           L_enh[i] = Math.max(0, Math.min(255.0, L_toned[i] + cored * coreMask[i]));
         }
 
-        // 7. Additive Luminance Delta Color Recomposition
+        // 7. Additive Luminance Delta Color Recomposition with Highlight Roll-Off
         const spaceCleanup = params.space_bg_cleanup ?? true;
         const isMonochrome = params.monochrome_output;
 
@@ -445,8 +446,14 @@ async function applyClientFallbackEnhancement(
           const G = d[idx + 1];
           const B = d[idx + 2];
 
-          const delta = (L_enh[i] - L0[i]) * coreMask[i];
+          // Keep natural dark maria depth (0.80x) but restrain bright highlight lift (0.50x)
+          const rawDelta = (L_enh[i] - L0[i]) * coreMask[i];
+          const delta = rawDelta > 0 ? rawDelta * 0.50 : rawDelta * 0.80;
           const maskWeight = (spaceCleanup && segMode === 'isolated_body') ? objectMask[i] : 1.0;
+
+          // Slightly lower delta weight on G and B for positive deltas to preserve rich telescopic color
+          const chromaDeltaG = delta > 0 ? delta * 0.65 : delta;
+          const chromaDeltaB = delta > 0 ? delta * 0.55 : delta;
 
           if (isMonochrome) {
             const monoOut = Math.min(255, Math.max(0, Math.round((L0[i] + delta) * maskWeight)));
@@ -455,8 +462,8 @@ async function applyClientFallbackEnhancement(
             d[idx + 2] = monoOut;
           } else {
             const rOut = Math.min(255, Math.max(0, Math.round((R + delta) * maskWeight)));
-            const gOut = Math.min(255, Math.max(0, Math.round((G + delta) * maskWeight)));
-            const bOut = Math.min(255, Math.max(0, Math.round((B + delta) * maskWeight)));
+            const gOut = Math.min(255, Math.max(0, Math.round((G + chromaDeltaG) * maskWeight)));
+            const bOut = Math.min(255, Math.max(0, Math.round((B + chromaDeltaB) * maskWeight)));
             d[idx] = rOut;
             d[idx + 1] = gOut;
             d[idx + 2] = bOut;
