@@ -13,7 +13,22 @@ import cv2
 
 SAMPLES_DIR = os.path.join(os.path.dirname(__file__), "samples")
 
-VERIFIED_SAMPLES: List[Dict[str, Any]] = [
+
+class VerifiedSamplesCatalog(list):
+    """List subclass that provides dictionary-style lookup by sample ID."""
+    def get(self, key: str, default=None):
+        for item in self:
+            if isinstance(item, dict) and item.get("id") == key:
+                return item
+        return default
+
+    def __contains__(self, key):
+        if isinstance(key, str):
+            return any(isinstance(item, dict) and item.get("id") == key for item in self)
+        return super().__contains__(key)
+
+
+VERIFIED_SAMPLES = VerifiedSamplesCatalog([
     {
         "id": "lro-north-pole-psr",
         "title": "Hermite & Whipple Craters - Polar Shadow (PSR)",
@@ -163,7 +178,7 @@ VERIFIED_SAMPLES: List[Dict[str, Any]] = [
             "sharpen_radius": 1.2
         }
     }
-]
+])
 
 
 def generate_synthetic_crater_fallback(width: int = 600, height: int = 600) -> np.ndarray:
@@ -221,12 +236,13 @@ def generate_synthetic_crater_fallback(width: int = 600, height: int = 600) -> n
     return np.clip(final_img, 0, 255).astype(np.uint8)
 
 
-def ensure_samples_cached():
+def ensure_samples_cached(cache_dir: str = None):
     """Ensures verified sample images are saved locally; downloads or generates fallback."""
-    os.makedirs(SAMPLES_DIR, exist_ok=True)
+    target_dir = cache_dir or SAMPLES_DIR
+    os.makedirs(target_dir, exist_ok=True)
 
     for sample in VERIFIED_SAMPLES:
-        local_path = os.path.join(SAMPLES_DIR, sample["local_filename"])
+        local_path = os.path.join(target_dir, sample["local_filename"])
         if not os.path.exists(local_path) or os.path.getsize(local_path) < 1000:
             downloaded = False
             try:
@@ -249,12 +265,13 @@ def ensure_samples_cached():
                 cv2.imwrite(local_path, synth)
 
 
-def get_samples_catalog() -> List[Dict[str, Any]]:
+def get_samples_catalog(cache_dir: str = None) -> List[Dict[str, Any]]:
     """Returns the verified samples catalog with local availability status."""
-    ensure_samples_cached()
+    target_dir = cache_dir or SAMPLES_DIR
+    ensure_samples_cached(target_dir)
     catalog = []
     for s in VERIFIED_SAMPLES:
-        local_path = os.path.join(SAMPLES_DIR, s["local_filename"])
+        local_path = os.path.join(target_dir, s["local_filename"])
         item = dict(s)
         item["available_locally"] = os.path.exists(local_path)
         item["file_size_bytes"] = os.path.getsize(local_path) if os.path.exists(local_path) else 0
@@ -262,12 +279,13 @@ def get_samples_catalog() -> List[Dict[str, Any]]:
     return catalog
 
 
-def get_sample_filepath(sample_id: str) -> str:
+def get_sample_filepath(sample_id: str, cache_dir: str = None) -> str:
     """Returns absolute path to a sample image."""
-    ensure_samples_cached()
+    target_dir = cache_dir or SAMPLES_DIR
+    ensure_samples_cached(target_dir)
     for s in VERIFIED_SAMPLES:
         if s["id"] == sample_id:
-            path = os.path.join(SAMPLES_DIR, s["local_filename"])
+            path = os.path.join(target_dir, s["local_filename"])
             if os.path.exists(path):
                 return path
     raise FileNotFoundError(f"Sample image '{sample_id}' not found.")

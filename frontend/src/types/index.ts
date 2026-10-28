@@ -30,6 +30,9 @@ export interface EnhancementParameters {
   sharpen_strength: number;    // 0 to 2.5
   sharpen_radius: number;      // 0.5 to 5.0
   monochrome_output: boolean;
+  space_bg_cleanup?: boolean;  // 3-zone soft lunar mask & deep-space noise stabilization
+  suppress_background_artifacts?: boolean;
+  background_smoothing?: number;
 }
 
 export interface ScientificAssessment {
@@ -38,12 +41,15 @@ export interface ScientificAssessment {
   clipping_warning: boolean;
   warning_message: string | null;
   dynamic_range_improvement_db: number;
+  background_suppression_active?: boolean;
 }
 
 export interface ProcessingTelemetry {
   elapsed_ms: number;
   dimensions: ImageDimensions;
   parameters_applied: EnhancementParameters;
+  segmentation_mode?: string;
+  lunar_segmentation?: any;
   original_stats: RadiometricStats;
   enhanced_stats: RadiometricStats;
   scientific_assessment: ScientificAssessment;
@@ -52,41 +58,48 @@ export interface ProcessingTelemetry {
 export interface VerifiedSample {
   id: string;
   title: string;
-  target: string;
-  mission: string;
-  instrument: string;
-  nasa_id: string;
-  coordinates: string;
-  illumination: string;
-  scientific_context: string;
-  attribution: string;
-  remote_url: string;
-  local_filename: string;
-  available_locally: boolean;
-  file_size_bytes: number;
-  recommended_preset: Partial<EnhancementParameters>;
+  target_region?: string;
+  target?: string;
+  description?: string;
+  mission?: string;
+  instrument?: string;
+  nasa_id?: string;
+  coordinates?: string;
+  illumination?: string;
+  scientific_context?: string;
+  attribution?: string;
+  remote_url?: string;
+  local_filename?: string;
+  available_locally?: boolean;
+  file_size_bytes?: number;
+  recommended_preset?: Partial<EnhancementParameters>;
 }
 
 export interface UploadResponse {
-  success: boolean;
   image_id: string;
   filename: string;
-  file_size_bytes: number;
+  title?: string;
+  target_region?: string;
+  description?: string;
+  raw_preview_url: string;
   dimensions: ImageDimensions;
-  bit_depth: number;
-  channels: number;
-  is_grayscale: boolean;
-  initial_stats: RadiometricStats;
-  preview_url: string;
-  preview_base64: string;
+  file_metadata: Record<string, any>;
+  original_stats: RadiometricStats;
+  initial_stats?: RadiometricStats;
+  bit_depth?: number;
+  channels?: number;
 }
 
 export interface EnhanceResponse {
-  success: boolean;
   image_id: string;
-  enhanced_base64: string;
-  original_base64: string;
+  enhanced_preview_url: string;
   telemetry: ProcessingTelemetry;
 }
 
-export type ViewMode = 'split' | 'side_by_side' | 'enhanced_only' | 'original_only';
+export interface TelemetryResponse {
+  image_id: string;
+  metadata: Record<string, any>;
+  latest_telemetry: ProcessingTelemetry | null;
+}
+
+export type ViewMode = 'split' | 'side_by_side' | 'enhanced' | 'original' | 'enhanced_only' | 'original_only';

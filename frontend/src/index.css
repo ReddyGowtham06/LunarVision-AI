@@ -6,48 +6,83 @@
   :root {
     color-scheme: dark;
   }
-  
   body {
-    @apply bg-obsidian-950 text-lunar-200 antialiased font-sans m-0 p-0 overflow-hidden select-none;
-  }
-
-  /* Scientific Range Input Styling */
-  input[type="range"] {
-    @apply appearance-none bg-obsidian-750 h-1.5 rounded-full cursor-pointer outline-none transition-all;
-  }
-
-  input[type="range"]::-webkit-slider-thumb {
-    @apply appearance-none w-3.5 h-3.5 rounded-full bg-observatory-cyan border border-white/80 shadow-md cursor-pointer transition-transform hover:scale-125;
-  }
-
-  input[type="range"]::-moz-range-thumb {
-    @apply appearance-none w-3.5 h-3.5 rounded-full bg-observatory-cyan border border-white/80 shadow-md cursor-pointer transition-transform hover:scale-125;
-  }
-
-  /* Custom Scientific Scrollbar */
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-
-  ::-webkit-scrollbar-track {
-    background: #090c12;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    background: #1e293b;
-    border-radius: 3px;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: #334155;
+    background-color: #020305;
+    color: #f1f5f9;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    user-select: none;
   }
 }
 
-/* Subtle crosshair grid for observatory viewport */
-.observatory-grid {
-  background-size: 32px 32px;
-  background-image: 
-    linear-gradient(to right, rgba(38, 49, 69, 0.25) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(38, 49, 69, 0.25) 1px, transparent 1px);
+.luxury-glass {
+  background: rgba(10, 13, 20, 0.68);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.luxury-glass-subtle {
+  background: rgba(14, 18, 28, 0.52);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.luxury-pill-active {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.06));
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+input[type="range"].studio-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  outline: none;
+  transition: background 0.2s;
+}
+
+input[type="range"].studio-slider:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+input[type="range"].studio-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #f8fafc;
+  border: 2px solid #020305;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.6), 0 2px 4px rgba(0, 0, 0, 0.8);
+  cursor: pointer;
+  transition: transform 0.15s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.15s;
+}
+
+input[type="range"].studio-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.22);
+  background: #e2c792;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
 }

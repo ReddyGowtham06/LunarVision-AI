@@ -1,5 +1,5 @@
 """
-LunarVision AI - Scientific Lunar Image Enhancement Platform
+LunarVision AI - Scientific Lunar Image Enhancement Platform (v2.0 Studio Edition)
 Backend API Service powered by FastAPI, OpenCV, and NumPy.
 """
 
@@ -10,16 +10,13 @@ import uuid
 import base64
 import time
 import tempfile
-from typing import Optional, Dict, Any, Tuple
+from typing import Dict, Any, Tuple
 import numpy as np
 import cv2
-from fastapi import FastAPI, UploadFile, File, Form, Query, HTTPException, status
+from fastapi import FastAPI, UploadFile, File, Form, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, StreamingResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import Response
 
-# Ensure both current directory (for Vercel Root Directory = 'backend')
-# and parent directory (for monorepo root execution) are on sys.path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PARENT_DIR = os.path.dirname(BASE_DIR)
 
@@ -45,34 +42,26 @@ except (ImportError, ModuleNotFoundError):
         VERIFIED_SAMPLES
     )
 
-# Workspace directories (serverless-aware for Vercel read-only filesystem)
 if os.environ.get("VERCEL") or not os.access(BASE_DIR, os.W_OK):
     TEMP_DIR = tempfile.gettempdir()
     UPLOADS_DIR = os.path.join(TEMP_DIR, "lunarvision_uploads")
-    CACHE_DIR = os.path.join(TEMP_DIR, "lunarvision_cache")
+    SAMPLES_CACHE_DIR = os.path.join(TEMP_DIR, "lunarvision_samples")
 else:
     UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")
-    CACHE_DIR = os.path.join(BASE_DIR, "cache")
+    SAMPLES_CACHE_DIR = os.path.join(BASE_DIR, "samples")
 
 os.makedirs(UPLOADS_DIR, exist_ok=True)
-os.makedirs(CACHE_DIR, exist_ok=True)
+os.makedirs(SAMPLES_CACHE_DIR, exist_ok=True)
 
-# File upload constraints
-MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
-ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp"}
-MAX_DIMENSION = 12000
-
-# In-memory LRU-style cache for active sessions: {image_id: {"img": np.ndarray, "meta": dict, "timestamp": float}}
-IMAGE_REGISTRY: Dict[str, Dict[str, Any]] = {}
+RAW_IMAGE_CACHE: Dict[str, Dict[str, Any]] = {}
 ENHANCED_CACHE: Dict[str, Dict[str, Any]] = {}
 
 app = FastAPI(
-    title="LunarVision AI API",
-    description="Scientific image enhancement platform for permanently shadowed lunar regions and craters.",
-    version="1.0.0"
+    title="LunarVision AI Studio API",
+    description="32-Bit Float Radiometric & 3-Zone Masked CLAHE Enhancement for Lunar Imagery",
+    version="2.0.0"
 )
 
-# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -84,195 +73,159 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup_event():
-    """Ensure samples are cached on startup."""
-    try:
-        ensure_samples_cached()
-    except Exception as e:
-        print(f"Warning: sample pre-cache failed: {e}")
+    """Ensure pre-packaged lunar test imagery is initialized."""
+    ensure_samples_cached(SAMPLES_CACHE_DIR)
 
 
 @app.get("/")
-def root():
-    """Root endpoint for Vercel deployment health diagnostics."""
+def root_status():
     return {
-        "service": "LunarVision AI Scientific Backend",
-        "status": "operational",
-        "docs_url": "/docs",
-        "health_url": "/api/health"
+        "service": "LunarVision AI Studio 2.0",
+        "status": "online",
+        "docs": "/docs",
+        "health": "/api/health"
     }
 
 
 @app.get("/api/health")
 def health_check():
-    """Returns system diagnostic information and capabilities."""
-    samples = get_samples_catalog()
+    """API Health Check and diagnostic route."""
     return {
-        "status": "operational",
-        "service": "LunarVision AI Scientific Backend",
+        "status": "online",
+        "service": "LunarVision AI Processing Engine v2.0",
+        "version": "2.0.0",
         "opencv_version": cv2.__version__,
-        "numpy_version": np.__version__,
-        "supported_formats": ["JPG", "JPEG", "PNG", "TIFF (8-bit / 16-bit)", "WEBP", "BMP"],
-        "max_upload_size_mb": MAX_FILE_SIZE_BYTES // (1024 * 1024),
-        "available_samples_count": len(samples),
-        "active_sessions_cached": len(IMAGE_REGISTRY)
+        "cached_sessions": len(RAW_IMAGE_CACHE)
     }
 
 
 @app.get("/api/samples")
-def list_samples():
-    """Returns catalog of verified, properly attributed lunar imagery."""
-    catalog = get_samples_catalog()
+def list_sample_imagery():
+    """Returns curated library of verified NASA / ISRO / LROC lunar surface targets."""
+    return get_samples_catalog()
+
+
+@app.post("/api/upload")
+async def upload_lunar_image(file: UploadFile = File(...)):
+    """Uploads a raw lunar image (PNG, JPG, TIFF) and extracts initial radiometric telemetry."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file uploaded.")
+
+    content = await file.read()
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    try:
+        raw_img, raw_meta = LunarImageEnhancer.load_image_from_bytes(content, file.filename)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Image decoding failed: {str(e)}")
+
+    image_id = str(uuid.uuid4())
+    stats = LunarImageEnhancer.calculate_radiometric_stats(raw_img)
+
+    RAW_IMAGE_CACHE[image_id] = {
+        "image_bytes": content,
+        "image_array": raw_img,
+        "filename": file.filename,
+        "metadata": raw_meta,
+        "stats": stats,
+        "created_at": time.time()
+    }
+
+    raw_b64_bytes = LunarImageEnhancer.encode_image_to_bytes(raw_img, "PNG")
+    raw_data_url = f"data:image/png;base64,{base64.b64encode(raw_b64_bytes).decode('utf-8')}"
+
     return {
-        "count": len(catalog),
-        "samples": catalog
+        "image_id": image_id,
+        "filename": file.filename,
+        "raw_preview_url": raw_data_url,
+        "dimensions": {
+            "width": int(raw_img.shape[1]),
+            "height": int(raw_img.shape[0]),
+            "channels": 1 if len(raw_img.shape) == 2 else int(raw_img.shape[2]),
+            "megapixels": round((raw_img.shape[0] * raw_img.shape[1]) / 1_000_000.0, 3)
+        },
+        "file_metadata": raw_meta,
+        "original_stats": stats
     }
 
 
-@app.get("/api/samples/{sample_id}/image")
-def get_sample_image(sample_id: str):
-    """Streams the raw verified sample image file."""
-    try:
-        path = get_sample_filepath(sample_id)
-        if not os.path.exists(path):
-            raise HTTPException(status_code=404, detail="Sample image file not found on disk.")
-        with open(path, "rb") as f:
-            data = f.read()
-        return Response(content=data, media_type="image/jpeg")
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Sample '{sample_id}' not found.")
+@app.post("/api/load-sample/{sample_id}")
+def load_sample_by_id(sample_id: str):
+    """Loads a pre-indexed NASA/ISRO sample image directly into session memory."""
+    sample_path = get_sample_filepath(sample_id, SAMPLES_CACHE_DIR)
+    if not os.path.exists(sample_path):
+        raise HTTPException(status_code=404, detail=f"Sample target '{sample_id}' not found.")
 
+    with open(sample_path, "rb") as f:
+        content = f.read()
 
-def register_image(image_id: str, img: np.ndarray, meta: Dict[str, Any]):
-    """Registers an image in memory with automatic eviction if over 20 items."""
-    if len(IMAGE_REGISTRY) > 20:
-        oldest_key = min(IMAGE_REGISTRY, key=lambda k: IMAGE_REGISTRY[k]["timestamp"])
-        del IMAGE_REGISTRY[oldest_key]
-    IMAGE_REGISTRY[image_id] = {
-        "img": img,
-        "meta": meta,
-        "timestamp": time.time()
+    filename = os.path.basename(sample_path)
+    raw_img, raw_meta = LunarImageEnhancer.load_image_from_bytes(content, filename)
+    stats = LunarImageEnhancer.calculate_radiometric_stats(raw_img)
+
+    RAW_IMAGE_CACHE[sample_id] = {
+        "image_bytes": content,
+        "image_array": raw_img,
+        "filename": filename,
+        "metadata": raw_meta,
+        "stats": stats,
+        "created_at": time.time()
+    }
+
+    raw_b64_bytes = LunarImageEnhancer.encode_image_to_bytes(raw_img, "PNG")
+    raw_data_url = f"data:image/png;base64,{base64.b64encode(raw_b64_bytes).decode('utf-8')}"
+
+    sample_info = VERIFIED_SAMPLES.get(sample_id, {})
+
+    return {
+        "image_id": sample_id,
+        "filename": filename,
+        "title": sample_info.get("title", sample_id),
+        "target_region": sample_info.get("target_region", "Lunar Surface"),
+        "description": sample_info.get("description", ""),
+        "raw_preview_url": raw_data_url,
+        "dimensions": {
+            "width": int(raw_img.shape[1]),
+            "height": int(raw_img.shape[0]),
+            "channels": 1 if len(raw_img.shape) == 2 else int(raw_img.shape[2]),
+            "megapixels": round((raw_img.shape[0] * raw_img.shape[1]) / 1_000_000.0, 3)
+        },
+        "file_metadata": raw_meta,
+        "original_stats": stats
     }
 
 
 def get_image_by_id(image_id: str) -> Tuple[np.ndarray, Dict[str, Any]]:
-    """Retrieves an image by ID (either from upload registry or sample catalog)."""
-    # Check in-memory registry
-    if image_id in IMAGE_REGISTRY:
-        IMAGE_REGISTRY[image_id]["timestamp"] = time.time()
-        return IMAGE_REGISTRY[image_id]["img"], IMAGE_REGISTRY[image_id]["meta"]
+    """Helper to locate raw image array by session ID, loading sample dynamically if needed."""
+    if image_id in RAW_IMAGE_CACHE:
+        entry = RAW_IMAGE_CACHE[image_id]
+        return entry["image_array"], entry["metadata"]
 
-    # Check if it corresponds to a sample ID
-    for sample in VERIFIED_SAMPLES:
-        if sample["id"] == image_id:
-            path = get_sample_filepath(sample["id"])
-            with open(path, "rb") as f:
-                raw_bytes = f.read()
-            img, meta = LunarImageEnhancer.load_image_from_bytes(raw_bytes, sample["local_filename"])
-            meta["is_verified_sample"] = True
-            meta["sample_metadata"] = sample
-            register_image(image_id, img, meta)
-            return img, meta
+    if image_id in VERIFIED_SAMPLES:
+        sample_path = get_sample_filepath(image_id, SAMPLES_CACHE_DIR)
+        if os.path.exists(sample_path):
+            with open(sample_path, "rb") as f:
+                content = f.read()
+            raw_img, raw_meta = LunarImageEnhancer.load_image_from_bytes(content, os.path.basename(sample_path))
+            stats = LunarImageEnhancer.calculate_radiometric_stats(raw_img)
+            RAW_IMAGE_CACHE[image_id] = {
+                "image_bytes": content,
+                "image_array": raw_img,
+                "filename": os.path.basename(sample_path),
+                "metadata": raw_meta,
+                "stats": stats,
+                "created_at": time.time()
+            }
+            return raw_img, raw_meta
 
-    # Check disk uploads
-    for ext in ALLOWED_EXTENSIONS:
-        disk_path = os.path.join(UPLOADS_DIR, f"{image_id}{ext}")
-        if os.path.exists(disk_path):
-            with open(disk_path, "rb") as f:
-                raw_bytes = f.read()
-            img, meta = LunarImageEnhancer.load_image_from_bytes(raw_bytes, f"{image_id}{ext}")
-            register_image(image_id, img, meta)
-            return img, meta
-
-    raise HTTPException(
-        status_code=404,
-        detail=f"Image ID '{image_id}' not found in active session or sample catalog."
-    )
-
-
-@app.post("/api/upload")
-async def upload_image(file: UploadFile = File(...)):
-    """
-    Safely uploads and registers a lunar image.
-    Validates file extension, size, dimensions, and preserves original file permanently.
-    """
-    filename = file.filename or "unnamed_image.png"
-    ext = os.path.splitext(filename)[1].lower()
-
-    if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"Unsupported file format '{ext}'. Supported formats: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
-        )
-
-    file_bytes = await file.read()
-    if len(file_bytes) > MAX_FILE_SIZE_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File exceeds maximum allowed size of {MAX_FILE_SIZE_BYTES // (1024 * 1024)} MB."
-        )
-
-    image_id = f"img_{uuid.uuid4().hex[:12]}"
-    
-    # Preserve original upload to disk without overwriting
-    preserved_path = os.path.join(UPLOADS_DIR, f"{image_id}{ext}")
-    with open(preserved_path, "wb") as pf:
-        pf.write(file_bytes)
-
-    # Decode and compute initial telemetry
-    try:
-        img, meta = LunarImageEnhancer.load_image_from_bytes(file_bytes, filename)
-    except Exception as exc:
-        if os.path.exists(preserved_path):
-            os.remove(preserved_path)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to decode scientific image: {str(exc)}"
-        )
-
-    # Validate image dimensions
-    h, w = img.shape[:2]
-    if h > MAX_DIMENSION or w > MAX_DIMENSION:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Image dimensions ({w}x{h}) exceed safety threshold of {MAX_DIMENSION}px."
-        )
-
-    meta["image_id"] = image_id
-    meta["saved_path"] = preserved_path
-    meta["channels"] = 1 if len(img.shape) == 2 else int(img.shape[2])
-    meta["width"] = int(w)
-    meta["height"] = int(h)
-
-    # Compute baseline radiometric statistics
-    initial_stats = LunarImageEnhancer.calculate_radiometric_stats(img)
-    meta["initial_stats"] = initial_stats
-
-    # Register in memory
-    register_image(image_id, img, meta)
-
-    # Generate standard PNG preview base64
-    preview_bytes = LunarImageEnhancer.encode_image_to_bytes(img, "PNG")
-    preview_b64 = "data:image/png;base64," + base64.b64encode(preview_bytes).decode("ascii")
-
-    return {
-        "success": True,
-        "image_id": image_id,
-        "filename": filename,
-        "file_size_bytes": len(file_bytes),
-        "dimensions": {"width": w, "height": h},
-        "bit_depth": meta.get("bit_depth", 8),
-        "channels": meta["channels"],
-        "is_grayscale": meta.get("is_grayscale", False),
-        "initial_stats": initial_stats,
-        "preview_url": f"/api/image/{image_id}/original",
-        "preview_base64": preview_b64
-    }
+    raise HTTPException(status_code=404, detail=f"Image session '{image_id}' expired or not found.")
 
 
 @app.post("/api/enhance")
-async def enhance_image_endpoint(
-    image_id: Optional[str] = Form(None),
-    file: Optional[UploadFile] = File(None),
+@app.post("/enhance")
+def process_enhancement(
+    image_id: str = Form(...),
     brightness: float = Form(0.0),
     contrast: float = Form(1.0),
     gamma: float = Form(1.0),
@@ -283,159 +236,81 @@ async def enhance_image_endpoint(
     denoise_method: str = Form("bilateral"),
     sharpen_strength: float = Form(0.0),
     sharpen_radius: float = Form(1.0),
-    monochrome_output: bool = Form(False)
+    monochrome_output: bool = Form(False),
+    space_bg_cleanup: bool = Form(True)
 ):
-    """
-    Applies scientific enhancement algorithms with fine-grained parameter control.
-    Supports either an existing image_id or a direct file payload.
-    """
-    target_img: Optional[np.ndarray] = None
-    target_meta: Optional[Dict[str, Any]] = None
-    active_image_id = image_id
+    """Executes scientific image enhancement with 3-zone soft lunar masking and yields base64 output + telemetry."""
+    raw_img, _ = get_image_by_id(image_id)
 
-    # Handle direct file payload if supplied
-    if file and file.filename:
-        file_bytes = await file.read()
-        filename = file.filename
-        ext = os.path.splitext(filename)[1].lower()
-        if ext not in ALLOWED_EXTENSIONS:
-            raise HTTPException(
-                status_code=415,
-                detail=f"Unsupported format '{ext}'."
-            )
-        active_image_id = f"img_{uuid.uuid4().hex[:12]}"
-        preserved_path = os.path.join(UPLOADS_DIR, f"{active_image_id}{ext}")
-        with open(preserved_path, "wb") as pf:
-            pf.write(file_bytes)
-        target_img, target_meta = LunarImageEnhancer.load_image_from_bytes(file_bytes, filename)
-        target_meta["image_id"] = active_image_id
-        register_image(active_image_id, target_img, target_meta)
-    elif active_image_id:
-        target_img, target_meta = get_image_by_id(active_image_id)
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail="Must supply either an 'image_id' or upload a 'file'."
-        )
+    enhanced_img, telemetry = LunarImageEnhancer.enhance_image(
+        img=raw_img,
+        brightness=brightness,
+        contrast=contrast,
+        gamma=gamma,
+        clahe_clip_limit=clahe_clip_limit,
+        clahe_grid_size=clahe_grid_size,
+        shadow_boost=shadow_boost,
+        denoise_strength=denoise_strength,
+        denoise_method=denoise_method,
+        sharpen_strength=sharpen_strength,
+        sharpen_radius=sharpen_radius,
+        monochrome_output=monochrome_output,
+        space_bg_cleanup=space_bg_cleanup
+    )
 
-    # Perform scientific enhancement
-    try:
-        enhanced_img, telemetry = LunarImageEnhancer.enhance_image(
-            img=target_img,
-            brightness=brightness,
-            contrast=contrast,
-            gamma=gamma,
-            clahe_clip_limit=clahe_clip_limit,
-            clahe_grid_size=clahe_grid_size,
-            shadow_boost=shadow_boost,
-            denoise_strength=denoise_strength,
-            denoise_method=denoise_method,
-            sharpen_strength=sharpen_strength,
-            sharpen_radius=sharpen_radius,
-            monochrome_output=monochrome_output
-        )
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Enhancement algorithm failed: {str(exc)}"
-        )
+    enhanced_bytes = LunarImageEnhancer.encode_image_to_bytes(enhanced_img, "PNG")
+    enhanced_b64 = f"data:image/png;base64,{base64.b64encode(enhanced_bytes).decode('utf-8')}"
 
-    # Cache enhanced image for download
-    ENHANCED_CACHE[active_image_id] = {
-        "img": enhanced_img,
+    ENHANCED_CACHE[image_id] = {
+        "image_array": enhanced_img,
         "telemetry": telemetry,
         "timestamp": time.time()
     }
 
-    # Encode original and enhanced as Base64 for instantaneous UI synchronization
-    orig_bytes = LunarImageEnhancer.encode_image_to_bytes(target_img, "PNG")
-    enh_bytes = LunarImageEnhancer.encode_image_to_bytes(enhanced_img, "PNG")
-
-    orig_b64 = "data:image/png;base64," + base64.b64encode(orig_bytes).decode("ascii")
-    enh_b64 = "data:image/png;base64," + base64.b64encode(enh_bytes).decode("ascii")
-
     return {
-        "success": True,
-        "image_id": active_image_id,
-        "enhanced_base64": enh_b64,
-        "original_base64": orig_b64,
+        "image_id": image_id,
+        "enhanced_preview_url": enhanced_b64,
         "telemetry": telemetry
     }
 
 
-@app.get("/api/image/{image_id}/original")
-def get_original_image(image_id: str):
-    """Streams the original uncompressed image file."""
-    img, _ = get_image_by_id(image_id)
-    img_bytes = LunarImageEnhancer.encode_image_to_bytes(img, "PNG")
-    return Response(content=img_bytes, media_type="image/png")
-
-
-@app.get("/api/image/{image_id}/enhanced")
-def get_latest_enhanced_image(image_id: str):
-    """Streams the most recently computed enhanced image."""
-    if image_id not in ENHANCED_CACHE:
-        # Generate default enhancement if not cached
-        img, _ = get_image_by_id(image_id)
-        enh, _ = LunarImageEnhancer.enhance_image(img)
-        ENHANCED_CACHE[image_id] = {"img": enh, "timestamp": time.time()}
-    
-    cached = ENHANCED_CACHE[image_id]["img"]
-    img_bytes = LunarImageEnhancer.encode_image_to_bytes(cached, "PNG")
-    return Response(content=img_bytes, media_type="image/png")
-
-
-@app.post("/api/export")
-def export_enhanced_image(
-    image_id: str = Form(...),
-    export_format: str = Form("PNG"),   # "PNG" | "JPEG" | "TIFF"
-    filename_prefix: str = Form("lunarvision_enhanced")
+@app.get("/api/download/{image_id}")
+def download_enhanced_image(
+    image_id: str,
+    format: str = Query("PNG", regex="^(PNG|JPG|JPEG|WEBP|TIFF)$")
 ):
-    """
-    Exports and triggers browser download of the enhanced image in PNG, JPEG, or TIFF format.
-    Includes scientific processing headers.
-    """
+    """Generates full-resolution image binary for scientific export."""
     if image_id not in ENHANCED_CACHE:
-        # Fallback to enhancing with default
-        img, _ = get_image_by_id(image_id)
-        enh, telemetry = LunarImageEnhancer.enhance_image(img)
-        ENHANCED_CACHE[image_id] = {"img": enh, "telemetry": telemetry, "timestamp": time.time()}
-
-    cached_entry = ENHANCED_CACHE[image_id]
-    img = cached_entry["img"]
-    telemetry = cached_entry.get("telemetry", {})
-
-    fmt = export_format.upper()
-    if fmt == "JPEG" or fmt == "JPG":
-        ext = "jpg"
-        media_type = "image/jpeg"
-    elif fmt in ("TIFF", "TIF"):
-        ext = "tif"
-        media_type = "image/tiff"
+        raw_img, _ = get_image_by_id(image_id)
+        enhanced_img, _ = LunarImageEnhancer.enhance_image(raw_img)
     else:
-        ext = "png"
-        media_type = "image/png"
+        enhanced_img = ENHANCED_CACHE[image_id]["image_array"]
 
-    img_bytes = LunarImageEnhancer.encode_image_to_bytes(img, fmt)
-    output_filename = f"{filename_prefix}_{image_id}.{ext}"
+    fmt = format.upper()
+    img_bytes = LunarImageEnhancer.encode_image_to_bytes(enhanced_img, fmt)
 
-    headers = {
-        "Content-Disposition": f"attachment; filename=\"{output_filename}\"",
-        "X-LunarVision-Methodology": "Classical Deterministic Radiometric & Spatial Filtering",
-        "X-LunarVision-Elapsed-MS": str(telemetry.get("elapsed_ms", 0.0))
+    media_types = {
+        "PNG": "image/png",
+        "JPG": "image/jpeg",
+        "JPEG": "image/jpeg",
+        "WEBP": "image/webp",
+        "TIFF": "image/tiff"
     }
+
+    ext = "tif" if fmt == "TIFF" else fmt.lower()
+    filename = f"lunarvision_enhanced_{image_id[:8]}.{ext}"
 
     return Response(
         content=img_bytes,
-        media_type=media_type,
-        headers=headers
+        media_type=media_types.get(fmt, "image/png"),
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
 
 @app.get("/api/image/{image_id}/telemetry")
 def get_image_telemetry(image_id: str):
     """Returns telemetry and parameter history for an image."""
-    img, meta = get_image_by_id(image_id)
+    _, meta = get_image_by_id(image_id)
     enhanced_entry = ENHANCED_CACHE.get(image_id)
     return {
         "image_id": image_id,

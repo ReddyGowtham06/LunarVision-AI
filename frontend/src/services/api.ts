@@ -3,49 +3,57 @@ import type {
   EnhanceResponse,
   UploadResponse,
   VerifiedSample,
-  ProcessingTelemetry
+  TelemetryResponse
 } from '../types';
 
-const envApiUrl = import.meta.env.VITE_API_URL;
-const API_BASE = envApiUrl
-  ? (envApiUrl.replace(/\/+$/, '').endsWith('/api') ? envApiUrl.replace(/\/+$/, '') : `${envApiUrl.replace(/\/+$/, '')}/api`)
+const RAW_ENV_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
+const API_BASE_URL = RAW_ENV_URL
+  ? (RAW_ENV_URL.endsWith('/api') ? RAW_ENV_URL : `${RAW_ENV_URL}/api`)
   : '/api';
 
+async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(url, options);
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const errJson = await res.json();
+      detail = errJson.detail || detail;
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+  return res.json() as Promise<T>;
+}
+
 export const apiService = {
-  async getHealth() {
-    const res = await fetch(`${API_BASE}/health`);
-    if (!res.ok) throw new Error(`Health check failed: ${res.statusText}`);
-    return res.json();
+  getHealth: async () => {
+    return requestJson<Record<string, any>>(`${API_BASE_URL}/health`);
   },
 
-  async getSamples(): Promise<VerifiedSample[]> {
-    const res = await fetch(`${API_BASE}/samples`);
-    if (!res.ok) throw new Error(`Failed to fetch samples catalog: ${res.statusText}`);
-    const data = await res.json();
-    return data.samples;
+  getSamples: async (): Promise<VerifiedSample[]> => {
+    return requestJson<VerifiedSample[]>(`${API_BASE_URL}/samples`);
   },
 
-  async uploadImage(file: File): Promise<UploadResponse> {
+  uploadImage: async (file: File): Promise<UploadResponse> => {
     const formData = new FormData();
     formData.append('file', file);
-
-    const res = await fetch(`${API_BASE}/upload`, {
+    return requestJson<UploadResponse>(`${API_BASE_URL}/upload`, {
       method: 'POST',
       body: formData,
     });
-
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.detail || `Upload failed with status ${res.status}`);
-    }
-
-    return res.json();
   },
 
-  async enhanceImage(
+  loadSample: async (sampleId: string): Promise<UploadResponse> => {
+    return requestJson<UploadResponse>(`${API_BASE_URL}/load-sample/${sampleId}`, {
+      method: 'POST',
+    });
+  },
+
+  enhanceImage: async (
     imageId: string,
     params: EnhancementParameters
-  ): Promise<EnhanceResponse> {
+  ): Promise<EnhanceResponse> => {
     const formData = new FormData();
     formData.append('image_id', imageId);
     formData.append('brightness', params.brightness.toString());
@@ -58,64 +66,20 @@ export const apiService = {
     formData.append('denoise_method', params.denoise_method);
     formData.append('sharpen_strength', params.sharpen_strength.toString());
     formData.append('sharpen_radius', params.sharpen_radius.toString());
-    formData.append('monochrome_output', params.monochrome_output ? 'true' : 'false');
+    formData.append('monochrome_output', params.monochrome_output.toString());
+    formData.append('space_bg_cleanup', (params.space_bg_cleanup ?? true).toString());
 
-    const res = await fetch(`${API_BASE}/enhance`, {
+    return requestJson<EnhanceResponse>(`${API_BASE_URL}/enhance`, {
       method: 'POST',
       body: formData,
     });
-
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.detail || `Enhancement processing error: ${res.status}`);
-    }
-
-    return res.json();
   },
 
-  async exportImage(
-    imageId: string,
-    format: 'PNG' | 'JPEG' | 'TIFF',
-    filenamePrefix: string = 'lunarvision_enhanced'
-  ): Promise<void> {
-    const formData = new FormData();
-    formData.append('image_id', imageId);
-    formData.append('export_format', format);
-    formData.append('filename_prefix', filenamePrefix);
-
-    const res = await fetch(`${API_BASE}/export`, {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (!res.ok) {
-      throw new Error(`Export failed with status: ${res.status}`);
-    }
-
-    const blob = await res.blob();
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    
-    // File extension
-    const ext = format === 'JPEG' ? 'jpg' : format === 'TIFF' ? 'tif' : 'png';
-    link.download = `${filenamePrefix}_${imageId}.${ext}`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
+  getDownloadUrl: (imageId: string, format: string = 'PNG'): string => {
+    return `${API_BASE_URL}/download/${imageId}?format=${format}`;
   },
 
-  downloadTelemetryJson(telemetry: ProcessingTelemetry, imageId: string): void {
-    const jsonStr = JSON.stringify(telemetry, null, 2);
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `lunarvision_telemetry_${imageId}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
+  getTelemetry: async (imageId: string): Promise<TelemetryResponse> => {
+    return requestJson<TelemetryResponse>(`${API_BASE_URL}/image/${imageId}/telemetry`);
   }
 };
