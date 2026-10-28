@@ -115,14 +115,10 @@ class LunarImageEnhancer:
         if len(img.shape) == 3 and img.shape[2] == 3:
             b, g, r = cv2.split(img)
             max_c = np.maximum(np.maximum(b, g), r)
-            lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-            l_chan = lab[:, :, 0]
         else:
             max_c = img.copy()
-            l_chan = img.copy()
 
         smooth_max = cv2.GaussianBlur(max_c, (5, 5), 0)
-        smooth_l = cv2.GaussianBlur(l_chan, (5, 5), 0)
 
         bw = max(4, int(w * 0.04))
         bh = max(4, int(h * 0.04))
@@ -133,17 +129,16 @@ class LunarImageEnhancer:
         border_mask[:, -bw:] = True
 
         border_max_vals = smooth_max[border_mask]
-        border_l_vals = smooth_l[border_mask]
 
-        p75_border_l = float(np.percentile(border_l_vals, 75))
-        p95_border_l = float(np.percentile(border_l_vals, 95))
+        p75_border_max = float(np.percentile(border_max_vals, 75))
+        p95_border_max = float(np.percentile(border_max_vals, 95))
         p98_border_max = float(np.percentile(border_max_vals, 98))
         p99_global_max = float(np.percentile(smooth_max, 99))
 
         is_dark_surround = (
-            (p75_border_l < 28.0)
-            and (p95_border_l < 45.0)
-            and (p99_global_max > p98_border_max + 20.0)
+            (p75_border_max < 32.0)
+            and (p95_border_max < 55.0)
+            and (p99_global_max > p95_border_max + 25.0)
         )
 
         if not is_dark_surround:
@@ -187,9 +182,9 @@ class LunarImageEnhancer:
             cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilate_bg_k, dilate_bg_k))
         ) == 0
         if np.any(bg_safety_mask):
-            bg_floor_l = float(np.percentile(smooth_l[bg_safety_mask], 96))
+            bg_floor_max = float(np.percentile(smooth_max[bg_safety_mask], 96))
         else:
-            bg_floor_l = p95_border_l
+            bg_floor_max = p95_border_max
 
         erode_px = max(1, int(min(h, w) * 0.0015))
         core_eroded = cv2.erode(
@@ -206,8 +201,9 @@ class LunarImageEnhancer:
         )
         feather_obj = max(15, int(min(h, w) * 0.045) | 1)
         object_mask = cv2.GaussianBlur(obj_dilated.astype(np.float32) / 255.0, (feather_obj, feather_obj), 0)
+        object_mask = np.where(object_mask < 0.03, 0.0, object_mask).astype(np.float32)
 
-        return core_mask, object_mask, bg_floor_l, "isolated_body"
+        return core_mask, object_mask, bg_floor_max, "isolated_body"
 
     @staticmethod
     def calculate_radiometric_stats(img: np.ndarray) -> Dict[str, Any]:
@@ -270,20 +266,24 @@ class LunarImageEnhancer:
 
         original_stats = cls.calculate_radiometric_stats(img)
         if space_bg_cleanup:
-            core_mask, object_mask, bg_floor_l, seg_mode = cls.build_lunar_masks(img)
+            core_mask, object_mask, bg_floor_max, seg_mode = cls.build_lunar_masks(img)
         else:
             h, w = img.shape[:2]
             core_mask = np.ones((h, w), dtype=np.float32)
             object_mask = np.ones((h, w), dtype=np.float32)
-            bg_floor_l = 0.0
+            bg_floor_max = 0.0
             seg_mode = "unmasked"
 
         if is_color:
-            lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-            l_u8, a_u8, b_u8 = cv2.split(lab)
-            lum_f32 = l_u8.astype(np.float32)
+            b_u8, g_u8, r_u8 = cv2.split(img)
+            b_f32 = b_u8.astype(np.float32)
+            g_f32 = g_u8.astype(np.float32)
+            r_f32 = r_u8.astype(np.float32)
+            l0 = 0.114 * b_f32 + 0.587 * g_f32 + 0.299 * r_f32
+            lum_f32 = l0.copy()
         else:
-            lum_f32 = img.astype(np.float32)
+            l0 = img.astype(np.float32)
+            lum_f32 = l0.copy()
 
         base_lum = lum_f32.copy()
 
@@ -312,13 +312,14 @@ class LunarImageEnhancer:
             lifted = norm_lum + boost_amount * weight * core_mask
             lum_f32 = np.clip(lifted * 255.0, 0.0, 255.0)
 
-        # Step 4: 256-Bin Adaptive CLAHE blended in float32 inside core_mask
+        # Step 4: 256-Bin Adaptive CLAHE blended at 0.78 clahe + 0.22 lum inside core_mask
         if clahe_clip_limit > 0.0:
             grid_s = max(2, min(32, int(clahe_grid_size)))
             clahe = cv2.createCLAHE(clipLimit=max(0.1, float(clahe_clip_limit)), tileGridSize=(grid_s, grid_s))
             clahe_u8 = clahe.apply(np.clip(np.round(lum_f32), 0, 255).astype(np.uint8))
             clahe_f32 = clahe_u8.astype(np.float32)
-            lum_f32 = lum_f32 * (1.0 - core_mask) + clahe_f32 * core_mask
+            clahe_blended = clahe_f32 * 0.78 + lum_f32 * 0.22
+            lum_f32 = lum_f32 * (1.0 - core_mask) + clahe_blended * core_mask
 
         # Step 5: Multi-Scale Crater Clarity & Rim Micro-Relief (Extracts and boosts fine topographic textures)
         if crater_clarity > 0.05:
@@ -341,33 +342,29 @@ class LunarImageEnhancer:
         toned_f32 = np.clip(toned_f32, 0.0, 255.0)
         lum_f32 = base_lum * (1.0 - object_mask) + toned_f32 * object_mask
 
-        # Step 7: Dual-Scale Unsharp Masking without Destructive Coring
+        # Step 7: Multi-Scale Coring Unsharp Mask (sigma 1.8 med, sigma 0.8 fine)
         if sharpen_strength > 0.05:
             amount = float(sharpen_strength)
             blurred_fine = cv2.GaussianBlur(lum_f32, (3, 3), 0.8)
-            blurred_med = cv2.GaussianBlur(lum_f32, (7, 7), 2.2)
-            detail = (lum_f32 - blurred_fine) * 0.75 + (lum_f32 - blurred_med) * 0.45
-            lum_f32 = np.clip(lum_f32 + amount * detail * core_mask, 0.0, 255.0)
+            blurred_med = cv2.GaussianBlur(lum_f32, (7, 7), 1.8)
+            detail = (lum_f32 - blurred_med) * (0.75 * amount) + (lum_f32 - blurred_fine) * (0.55 * amount)
+            abs_detail = np.abs(detail)
+            cored_detail = np.sign(detail) * np.maximum(0.0, abs_detail - 0.35)
+            cored_detail = np.clip(cored_detail, -32.0, 32.0)
+            lum_f32 = np.clip(lum_f32 + cored_detail * core_mask, 0.0, 255.0)
 
-        # Step 8: Deep-Space Background Floor Stabilization (Locks space outside corona to pure 0.00 DN)
-        if space_bg_cleanup and seg_mode == "isolated_body":
-            space_weight = 1.0 - object_mask
-            cleaned_bg = np.maximum(0.0, (base_lum - bg_floor_l * 1.25) * 0.15)
-            lum_f32 = lum_f32 * object_mask + cleaned_bg * space_weight
+        # Step 8: Additive Luminance Delta Color Recomposition with 3-Zone Space Mask
+        delta = (lum_f32 - l0) * core_mask
+        mask_w = object_mask if (space_bg_cleanup and seg_mode == "isolated_body") else np.ones_like(l0)
 
-        # Step 9: Color Recomposition
-        l_final_u8 = np.clip(np.round(lum_f32), 0, 255).astype(np.uint8)
         if is_color and not monochrome_output:
-            if space_bg_cleanup and seg_mode == "isolated_body":
-                chroma_mask = np.clip(object_mask * 1.15, 0.0, 1.0)
-                a_final = np.clip(np.round(128.0 + (a_u8.astype(np.float32) - 128.0) * chroma_mask), 0, 255).astype(np.uint8)
-                b_final = np.clip(np.round(128.0 + (b_u8.astype(np.float32) - 128.0) * chroma_mask), 0, 255).astype(np.uint8)
-            else:
-                a_final = a_u8
-                b_final = b_u8
-            enhanced_img = cv2.cvtColor(cv2.merge([l_final_u8, a_final, b_final]), cv2.COLOR_LAB2BGR)
+            b_out = np.clip(np.round((b_f32 + delta) * mask_w), 0, 255).astype(np.uint8)
+            g_out = np.clip(np.round((g_f32 + delta) * mask_w), 0, 255).astype(np.uint8)
+            r_out = np.clip(np.round((r_f32 + delta) * mask_w), 0, 255).astype(np.uint8)
+            enhanced_img = cv2.merge([b_out, g_out, r_out])
         else:
-            enhanced_img = l_final_u8
+            l_out = np.clip(np.round((l0 + delta) * mask_w), 0, 255).astype(np.uint8)
+            enhanced_img = l_out
 
         elapsed_ms = round((time.perf_counter() - start_time) * 1000.0, 2)
         enhanced_stats = cls.calculate_radiometric_stats(enhanced_img)
