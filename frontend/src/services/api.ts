@@ -11,7 +11,6 @@ const API_BASE_URL = RAW_ENV_URL
   ? (RAW_ENV_URL.endsWith('/api') ? RAW_ENV_URL : `${RAW_ENV_URL}/api`)
   : '/api';
 
-// In-memory cache for local or remote image previews
 const IMAGE_DATA_CACHE = new Map<string, string>();
 
 const FALLBACK_SAMPLES: VerifiedSample[] = [
@@ -51,7 +50,7 @@ const FALLBACK_SAMPLES: VerifiedSample[] = [
 
 async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
     if (!res.ok) {
@@ -70,7 +69,6 @@ async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
   }
 }
 
-// Client-side quick contrast / brightness / gamma emulation fallback
 async function applyClientFallbackEnhancement(dataUrl: string, params: EnhancementParameters): Promise<string> {
   if (typeof window === 'undefined' || !dataUrl) return dataUrl;
   return new Promise((resolve) => {
@@ -92,6 +90,7 @@ async function applyClientFallbackEnhancement(dataUrl: string, params: Enhanceme
         const brightnessOffset = params.brightness || 0;
         const gamma = Math.max(0.1, params.gamma || 1.0);
         const shadowBoost = ((params.shadow_boost || 0) / 100) * 0.45;
+        const clarity = params.crater_clarity ?? 1.25;
 
         for (let i = 0; i < d.length; i += 4) {
           for (let c = 0; c < 3; c++) {
@@ -101,7 +100,7 @@ async function applyClientFallbackEnhancement(dataUrl: string, params: Enhanceme
               const shadowWeight = Math.pow(1.0 - v, 1.8) * Math.pow(v, 0.45);
               v = v + shadowBoost * shadowWeight;
             }
-            v = (v - 0.5) * contrastFactor + 0.5;
+            v = (v - 0.5) * (contrastFactor * Math.min(1.5, clarity)) + 0.5;
             let finalVal = v * 255.0 + brightnessOffset;
             d[i + c] = Math.max(0, Math.min(255, Math.round(finalVal)));
           }
@@ -213,6 +212,7 @@ export const apiService = {
       formData.append('denoise_method', params.denoise_method);
       formData.append('sharpen_strength', params.sharpen_strength.toString());
       formData.append('sharpen_radius', params.sharpen_radius.toString());
+      formData.append('crater_clarity', (params.crater_clarity ?? 1.25).toString());
       formData.append('monochrome_output', params.monochrome_output.toString());
       formData.append('space_bg_cleanup', (params.space_bg_cleanup ?? true).toString());
 
@@ -227,7 +227,7 @@ export const apiService = {
       }
       throw new Error('Empty response from enhance API');
     } catch (err) {
-      console.warn('API /enhance failed or timed out, activating client-side fallback:', err);
+      console.warn('API /enhance failed, using client fallback:', err);
       const rawDataUrl = IMAGE_DATA_CACHE.get(imageId) || '';
       const fallbackEnhancedUrl = rawDataUrl ? await applyClientFallbackEnhancement(rawDataUrl, params) : rawDataUrl;
 

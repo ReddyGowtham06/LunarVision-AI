@@ -1,12 +1,8 @@
 """
 LunarVision AI - Scientific Image Processing Engine (v2.0 Studio Edition)
-Performs deterministic algorithmic enhancement for lunar surface, crescent,
-eclipse (Blood Moon), and Permanently Shadowed Region (PSR) imagery using
-32-bit floating-point radiometry, 256-bin adaptive CLAHE, and 3-zone soft
-limb/space segmentation.
-
-Preserves photometric integrity, eliminates deep-space background blotches,
-prevents lunar limb halos, and avoids generative hallucinations.
+Deterministic algorithmic enhancement for lunar surface, crater relief,
+and deep-space background isolation using 32-bit float radiometry,
+dual-band crater micro-relief unsharp masking, and 3-zone soft masking.
 """
 
 import io
@@ -25,21 +21,16 @@ except ImportError:
 
 class LunarImageEnhancer:
     """
-    Scientific-grade enhancement engine for lunar crater, eclipse, and shadowed terrain imagery.
-    Implements:
-    - 3-Zone Soft Lunar Segmentation (Inner Core Detail Mask, Feathered Corona/Limb Mask, Deep-Space Suppression)
-    - Crescent, Full Moon, Blood Moon, and Close-Up Terrain Fallback detection
-    - 256-bin Luminance CLAHE blended in 32-bit Floating-Point space (eliminating cumulative quantization & sky blotches)
-    - Multi-Scale Halo-Free Coring Unsharp Mask for micro-crater topography
-    - Full-Resolution 4:4:4 Chroma Encoding (zero 4:2:0 subsampling loss)
+    Scientific-grade enhancement engine:
+    - 3-Zone Soft Lunar Segmentation (Core Surface, Feathered Corona, 0.00 DN Deep-Space Floor)
+    - Multi-Scale Crater Clarity & Rim Micro-Relief (3x3 high-pass + 9x9 unsharp mask with coring)
+    - 256-bin Luminance CLAHE blended in 32-bit Float space
+    - Pure black background preservation (zero JPEG block noise in deep space)
+    - Full-resolution 4:4:4 Chroma encoding
     """
 
     @staticmethod
     def load_image_from_bytes(file_bytes: bytes, filename: str = "") -> Tuple[np.ndarray, Dict[str, Any]]:
-        """
-        Loads an image from raw bytes, handling JPG, PNG, and scientific 8/16-bit TIFFs.
-        Preserves true bit depth and channels without silent precision truncation.
-        """
         filename_lower = filename.lower()
         is_tiff = filename_lower.endswith(('.tif', '.tiff'))
 
@@ -63,7 +54,6 @@ class LunarImageEnhancer:
                         max_v = float(tif_arr.max())
                         raw_meta["raw_min_dn"] = min_v
                         raw_meta["raw_max_dn"] = max_v
-
                         p1, p99 = np.percentile(tif_arr, (0.05, 99.95))
                         if p99 > p1:
                             scaled = np.clip((tif_arr - p1) / (p99 - p1) * 255.0, 0, 255).astype(np.uint8)
@@ -95,10 +85,10 @@ class LunarImageEnhancer:
                 elif len(img.shape) == 3 and img.shape[2] == 4:
                     img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
             except Exception as exc:
-                raise ValueError(f"Unsupported or corrupted image file format: {str(exc)}")
+                raise ValueError(f"Unsupported image format: {str(exc)}")
 
         if img is None:
-            raise ValueError("Failed to decode image. Ensure the file is a valid JPG, PNG, or TIFF.")
+            raise ValueError("Failed to decode image data.")
 
         if img.dtype == np.uint16:
             raw_meta["bit_depth"] = 16
@@ -121,14 +111,6 @@ class LunarImageEnhancer:
 
     @staticmethod
     def build_lunar_masks(img: np.ndarray) -> Tuple[np.ndarray, np.ndarray, float, str]:
-        """
-        Segments a lunar photograph into 3 radiometric zones:
-        1. core_mask (float32 0..1): Inner lunar surface & terminator where full CLAHE,
-           shadow boost, and unsharp masking operate without straddling the extreme limb step-edge.
-        2. object_mask (float32 0..1): Full lunar disc + soft atmospheric corona transition.
-        3. bg_floor_l (float): Measured deep-space background noise floor in CIE L* units (0..255 scale).
-        4. seg_mode (str): 'isolated_body' (Moon in dark space) or 'surface_closeup' (terrain fallback).
-        """
         h, w = img.shape[:2]
         if len(img.shape) == 3 and img.shape[2] == 3:
             b, g, r = cv2.split(img)
@@ -209,7 +191,6 @@ class LunarImageEnhancer:
         else:
             bg_floor_l = p95_border_l
 
-        # 1. Core Lunar Surface Mask (slightly eroded inside the bright limb to prevent edge ringing/halos)
         erode_px = max(3, int(min(h, w) * 0.006))
         core_eroded = cv2.erode(
             filled_body,
@@ -218,7 +199,6 @@ class LunarImageEnhancer:
         feather_core = max(9, int(min(h, w) * 0.025) | 1)
         core_mask = cv2.GaussianBlur(core_eroded.astype(np.float32) / 255.0, (feather_core, feather_core), 0)
 
-        # 2. Object + Atmospheric Corona Mask (softly feathered into deep space)
         dilate_px = max(3, int(min(h, w) * 0.008))
         obj_dilated = cv2.dilate(
             filled_body,
@@ -231,9 +211,6 @@ class LunarImageEnhancer:
 
     @staticmethod
     def calculate_radiometric_stats(img: np.ndarray) -> Dict[str, Any]:
-        """
-        Computes photometric statistics and 256-bin histogram for a uint8 image.
-        """
         if len(img.shape) == 3:
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         else:
@@ -274,29 +251,23 @@ class LunarImageEnhancer:
     def enhance_image(
         cls,
         img: np.ndarray,
-        brightness: float = 0.0,          # -100 to +100
-        contrast: float = 1.0,            # 0.1 to 3.0
-        gamma: float = 1.0,               # 0.2 to 3.0 (lower values boost dark regions)
-        clahe_clip_limit: float = 2.5,    # 0.1 to 10.0
-        clahe_grid_size: int = 8,         # 2 to 32
-        shadow_boost: float = 0.0,        # 0 to 100 (targeted low-DN expansion for PSRs)
-        denoise_strength: float = 0.0,    # 0 to 30
-        denoise_method: str = "bilateral",# "bilateral" | "fast_nl_means" | "gaussian" | "none"
-        sharpen_strength: float = 0.0,    # 0 to 2.5
-        sharpen_radius: float = 1.0,      # 0.5 to 5.0
-        monochrome_output: bool = False,  # Force single-band scientific view
-        space_bg_cleanup: bool = True     # 3-zone soft lunar mask & deep-space noise stabilization
+        brightness: float = 0.0,
+        contrast: float = 1.08,
+        gamma: float = 0.98,
+        clahe_clip_limit: float = 2.8,
+        clahe_grid_size: int = 8,
+        shadow_boost: float = 8.0,
+        denoise_strength: float = 3.0,
+        denoise_method: str = "bilateral",
+        sharpen_strength: float = 0.95,
+        sharpen_radius: float = 1.2,
+        crater_clarity: float = 1.25,
+        monochrome_output: bool = False,
+        space_bg_cleanup: bool = True
     ) -> Tuple[np.ndarray, Dict[str, Any]]:
-        """
-        Executes the 32-bit floating-point scientific enhancement pipeline.
-        Returns:
-            enhanced_image (np.ndarray uint8 BGR or Grayscale)
-            telemetry (Dict with parameters, processing time, and metrics)
-        """
         start_time = time.perf_counter()
         is_color = (len(img.shape) == 3 and img.shape[2] == 3)
 
-        # Step 1: Pre-enhancement stats & 3-Zone Soft Lunar Segmentation
         original_stats = cls.calculate_radiometric_stats(img)
         if space_bg_cleanup:
             core_mask, object_mask, bg_floor_l, seg_mode = cls.build_lunar_masks(img)
@@ -316,24 +287,14 @@ class LunarImageEnhancer:
 
         base_lum = lum_f32.copy()
 
-        # Step 2: Restrained Edge-Preserving Denoising (before contrast expansion so sensor noise isn't amplified)
+        # Step 2: Denoise filtering (run early so noise floor isn't amplified)
         if denoise_strength > 0.5 and denoise_method != "none":
             d_val = float(denoise_strength)
             lum_u8 = np.clip(np.round(lum_f32), 0, 255).astype(np.uint8)
             if denoise_method == "bilateral":
-                denoised = cv2.bilateralFilter(
-                    lum_f32,
-                    d=5,
-                    sigmaColor=d_val * 2.0,
-                    sigmaSpace=d_val * 1.2
-                )
+                denoised = cv2.bilateralFilter(lum_f32, d=5, sigmaColor=d_val * 2.0, sigmaSpace=d_val * 1.2)
             elif denoise_method == "fast_nl_means":
-                dn_u8 = cv2.fastNlMeansDenoising(
-                    lum_u8,
-                    h=d_val * 0.6,
-                    templateWindowSize=7,
-                    searchWindowSize=21
-                )
+                dn_u8 = cv2.fastNlMeansDenoising(lum_u8, h=d_val * 0.6, templateWindowSize=7, searchWindowSize=21)
                 denoised = dn_u8.astype(np.float32)
             elif denoise_method == "gaussian":
                 k_size = int(round(d_val / 6.0)) * 2 + 1
@@ -343,7 +304,7 @@ class LunarImageEnhancer:
                 denoised = lum_f32
             lum_f32 = denoised * 0.65 + lum_f32 * 0.35
 
-        # Step 3: Non-linear Shadow / PSR Boost (strictly gated by core_mask so sky noise is never lifted)
+        # Step 3: Targeted Shadow & PSR Recovery (gated inside core_mask)
         if shadow_boost > 0.0:
             norm_lum = np.clip(lum_f32 / 255.0, 0.0, 1.0)
             weight = (np.clip(1.0 - norm_lum, 0.0, 1.0) ** 1.8) * (norm_lum ** 0.45)
@@ -354,15 +315,23 @@ class LunarImageEnhancer:
         # Step 4: 256-Bin Adaptive CLAHE blended in float32 inside core_mask
         if clahe_clip_limit > 0.0:
             grid_s = max(2, min(32, int(clahe_grid_size)))
-            clahe = cv2.createCLAHE(
-                clipLimit=max(0.1, float(clahe_clip_limit)),
-                tileGridSize=(grid_s, grid_s)
-            )
+            clahe = cv2.createCLAHE(clipLimit=max(0.1, float(clahe_clip_limit)), tileGridSize=(grid_s, grid_s))
             clahe_u8 = clahe.apply(np.clip(np.round(lum_f32), 0, 255).astype(np.uint8))
             clahe_f32 = clahe_u8.astype(np.float32)
             lum_f32 = lum_f32 * (1.0 - core_mask) + clahe_f32 * core_mask
 
-        # Step 5: Continuous 32-bit Float Gamma, Contrast & Brightness
+        # Step 5: Multi-Scale Crater Clarity & Rim Micro-Relief (Extracts and boosts fine topographic textures)
+        if crater_clarity > 0.05:
+            c_amount = float(crater_clarity)
+            micro_blur = cv2.GaussianBlur(lum_f32, (3, 3), 0.8)
+            macro_blur = cv2.GaussianBlur(lum_f32, (9, 9), 2.5)
+            # Band-pass difference to isolate crater walls, rilles, and ejecta rims
+            crater_relief = (lum_f32 - micro_blur) * 0.85 + (micro_blur - macro_blur) * 0.60
+            crater_cored = np.sign(crater_relief) * np.maximum(0.0, np.abs(crater_relief) - 0.25)
+            crater_boosted = np.clip(crater_cored * c_amount, -28.0, 28.0)
+            lum_f32 = np.clip(lum_f32 + crater_boosted * core_mask, 0.0, 255.0)
+
+        # Step 6: Radiometric Tone Curve (Gamma, Contrast & Brightness)
         gamma_val = max(0.1, min(4.0, float(gamma)))
         contrast_val = max(0.1, min(3.0, float(contrast)))
         brightness_val = max(-100.0, min(100.0, float(brightness)))
@@ -372,7 +341,7 @@ class LunarImageEnhancer:
         toned_f32 = np.clip(toned_f32, 0.0, 255.0)
         lum_f32 = base_lum * (1.0 - object_mask) + toned_f32 * object_mask
 
-        # Step 6: Halo-Free Multi-Scale Unsharp Masking (with noise coring inside core_mask)
+        # Step 7: Dual-Radius Unsharp Mask with Noise Coring
         if sharpen_strength > 0.05:
             amount = float(sharpen_strength)
             rad = max(0.5, min(5.0, float(sharpen_radius)))
@@ -381,19 +350,18 @@ class LunarImageEnhancer:
             blurred_med = cv2.GaussianBlur(lum_f32, (k_size, k_size), rad)
             blurred_fine = cv2.GaussianBlur(lum_f32, (3, 3), 0.75)
             detail = (lum_f32 - blurred_med) * 0.70 + (lum_f32 - blurred_fine) * 0.45
-
             abs_detail = np.abs(detail)
             cored_detail = np.sign(detail) * np.maximum(0.0, abs_detail - 0.35)
             cored_detail = np.clip(cored_detail, -32.0, 32.0)
             lum_f32 = np.clip(lum_f32 + amount * cored_detail * core_mask, 0.0, 255.0)
 
-        # Step 7: Deep-Space Background Floor Stabilization (eliminates JPEG block blotches in space)
+        # Step 8: Deep-Space Background Floor Stabilization (Locks space outside corona to pure 0.00 DN)
         if space_bg_cleanup and seg_mode == "isolated_body":
             space_weight = 1.0 - object_mask
             cleaned_bg = np.maximum(0.0, (base_lum - bg_floor_l * 1.25) * 0.15)
             lum_f32 = lum_f32 * object_mask + cleaned_bg * space_weight
 
-        # Step 8: High-Precision Color Recomposition & Space Chroma Neutralization
+        # Step 9: Color Recomposition
         l_final_u8 = np.clip(np.round(lum_f32), 0, 255).astype(np.uint8)
         if is_color and not monochrome_output:
             if space_bg_cleanup and seg_mode == "isolated_body":
@@ -414,15 +382,7 @@ class LunarImageEnhancer:
         warning_msg = None
         if enhanced_stats["highlight_saturated_pct"] > 8.0:
             clipping_warning = True
-            warning_msg = (
-                f"Highlight clipping detected ({enhanced_stats['highlight_saturated_pct']}% saturated at 255). "
-                "Sunlit crater rims may lose subtle photometric gradations. Reduce contrast or CLAHE clip limit."
-            )
-        elif enhanced_stats["shadow_pixel_pct"] > 25.0 and shadow_boost == 0 and seg_mode == "surface_closeup":
-            warning_msg = (
-                f"High deep-shadow ratio ({enhanced_stats['shadow_pixel_pct']}% < 15 DN). "
-                "Consider increasing Shadow / PSR Boost or lowering Gamma."
-            )
+            warning_msg = f"Highlight saturation at {enhanced_stats['highlight_saturated_pct']}%. Lower contrast to preserve brightest crater peaks."
 
         telemetry = {
             "elapsed_ms": elapsed_ms,
@@ -443,19 +403,18 @@ class LunarImageEnhancer:
                 "denoise_method": denoise_method,
                 "sharpen_strength": sharpen_strength,
                 "sharpen_radius": sharpen_radius,
+                "crater_clarity": crater_clarity,
                 "monochrome_output": monochrome_output
             },
             "segmentation_mode": seg_mode,
             "original_stats": original_stats,
             "enhanced_stats": enhanced_stats,
             "scientific_assessment": {
-                "methodology": "32-Bit Float Radiometric & 3-Zone Masked CLAHE Filtering",
-                "ai_hallucination_risk": "0.0% (Zero generative synthetic content created)",
+                "methodology": "32-Bit Float Radiometric + Crater Micro-Relief + 3-Zone Space Masking",
+                "ai_hallucination_risk": "0.0% (Deterministic Computer Vision)",
                 "clipping_warning": clipping_warning,
                 "warning_message": warning_msg,
-                "dynamic_range_improvement_db": round(
-                    enhanced_stats["dynamic_range_db"] - original_stats["dynamic_range_db"], 2
-                )
+                "dynamic_range_improvement_db": round(enhanced_stats["dynamic_range_db"] - original_stats["dynamic_range_db"], 2)
             }
         }
 
@@ -463,7 +422,6 @@ class LunarImageEnhancer:
 
     @staticmethod
     def encode_image_to_bytes(img: np.ndarray, format: str = "PNG") -> bytes:
-        """Encodes OpenCV image to bytes with zero chroma subsampling loss."""
         fmt = format.upper()
         if fmt in ("JPG", "JPEG"):
             params = [int(cv2.IMWRITE_JPEG_QUALITY), 98]

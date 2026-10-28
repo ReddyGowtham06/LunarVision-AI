@@ -1,6 +1,6 @@
 """
 LunarVision AI - Scientific Lunar Image Enhancement Platform (v2.0 Studio Edition)
-Backend API Service powered by FastAPI, OpenCV, and NumPy.
+FastAPI Backend Service.
 """
 
 import os
@@ -73,7 +73,6 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup_event():
-    """Ensure pre-packaged lunar test imagery is initialized."""
     ensure_samples_cached(SAMPLES_CACHE_DIR)
 
 
@@ -89,7 +88,6 @@ def root_status():
 
 @app.get("/api/health")
 def health_check():
-    """API Health Check and diagnostic route."""
     return {
         "status": "online",
         "service": "LunarVision AI Processing Engine v2.0",
@@ -101,13 +99,11 @@ def health_check():
 
 @app.get("/api/samples")
 def list_sample_imagery():
-    """Returns curated library of verified NASA / ISRO / LROC lunar surface targets."""
     return get_samples_catalog()
 
 
 @app.post("/api/upload")
 async def upload_lunar_image(file: UploadFile = File(...)):
-    """Uploads a raw lunar image (PNG, JPG, TIFF) and extracts initial radiometric telemetry."""
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file uploaded.")
 
@@ -152,7 +148,6 @@ async def upload_lunar_image(file: UploadFile = File(...)):
 
 @app.post("/api/load-sample/{sample_id}")
 def load_sample_by_id(sample_id: str):
-    """Loads a pre-indexed NASA/ISRO sample image directly into session memory."""
     sample_path = get_sample_filepath(sample_id, SAMPLES_CACHE_DIR)
     if not os.path.exists(sample_path):
         raise HTTPException(status_code=404, detail=f"Sample target '{sample_id}' not found.")
@@ -175,7 +170,6 @@ def load_sample_by_id(sample_id: str):
 
     raw_b64_bytes = LunarImageEnhancer.encode_image_to_bytes(raw_img, "PNG")
     raw_data_url = f"data:image/png;base64,{base64.b64encode(raw_b64_bytes).decode('utf-8')}"
-
     sample_info = VERIFIED_SAMPLES.get(sample_id, {})
 
     return {
@@ -197,7 +191,6 @@ def load_sample_by_id(sample_id: str):
 
 
 def get_image_by_id(image_id: str) -> Tuple[np.ndarray, Dict[str, Any]]:
-    """Helper to locate raw image array by session ID, loading sample dynamically if needed."""
     if image_id in RAW_IMAGE_CACHE:
         entry = RAW_IMAGE_CACHE[image_id]
         return entry["image_array"], entry["metadata"]
@@ -227,19 +220,19 @@ def get_image_by_id(image_id: str) -> Tuple[np.ndarray, Dict[str, Any]]:
 def process_enhancement(
     image_id: str = Form(...),
     brightness: float = Form(0.0),
-    contrast: float = Form(1.0),
-    gamma: float = Form(1.0),
-    clahe_clip_limit: float = Form(2.5),
+    contrast: float = Form(1.08),
+    gamma: float = Form(0.98),
+    clahe_clip_limit: float = Form(2.8),
     clahe_grid_size: int = Form(8),
-    shadow_boost: float = Form(0.0),
-    denoise_strength: float = Form(0.0),
+    shadow_boost: float = Form(8.0),
+    denoise_strength: float = Form(3.0),
     denoise_method: str = Form("bilateral"),
-    sharpen_strength: float = Form(0.0),
-    sharpen_radius: float = Form(1.0),
+    sharpen_strength: float = Form(0.95),
+    sharpen_radius: float = Form(1.2),
+    crater_clarity: float = Form(1.25),
     monochrome_output: bool = Form(False),
     space_bg_cleanup: bool = Form(True)
 ):
-    """Executes scientific image enhancement with 3-zone soft lunar masking and yields base64 output + telemetry."""
     raw_img, _ = get_image_by_id(image_id)
 
     enhanced_img, telemetry = LunarImageEnhancer.enhance_image(
@@ -254,6 +247,7 @@ def process_enhancement(
         denoise_method=denoise_method,
         sharpen_strength=sharpen_strength,
         sharpen_radius=sharpen_radius,
+        crater_clarity=crater_clarity,
         monochrome_output=monochrome_output,
         space_bg_cleanup=space_bg_cleanup
     )
@@ -279,7 +273,6 @@ def download_enhanced_image(
     image_id: str,
     format: str = Query("PNG", regex="^(PNG|JPG|JPEG|WEBP|TIFF)$")
 ):
-    """Generates full-resolution image binary for scientific export."""
     if image_id not in ENHANCED_CACHE:
         raw_img, _ = get_image_by_id(image_id)
         enhanced_img, _ = LunarImageEnhancer.enhance_image(raw_img)
@@ -309,7 +302,6 @@ def download_enhanced_image(
 
 @app.get("/api/image/{image_id}/telemetry")
 def get_image_telemetry(image_id: str):
-    """Returns telemetry and parameter history for an image."""
     _, meta = get_image_by_id(image_id)
     enhanced_entry = ENHANCED_CACHE.get(image_id)
     return {

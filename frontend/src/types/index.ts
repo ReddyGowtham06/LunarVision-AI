@@ -19,18 +19,19 @@ export interface RadiometricStats {
 }
 
 export interface EnhancementParameters {
-  brightness: number;          // -100 to 100
-  contrast: number;            // 0.1 to 3.0
-  gamma: number;               // 0.2 to 3.0
-  clahe_clip_limit: number;    // 0.1 to 10.0
-  clahe_grid_size: number;     // 2 to 32
-  shadow_boost: number;        // 0 to 100
-  denoise_strength: number;    // 0 to 30
+  brightness: number;
+  contrast: number;
+  gamma: number;
+  clahe_clip_limit: number;
+  clahe_grid_size: number;
+  shadow_boost: number;
+  denoise_strength: number;
   denoise_method: 'bilateral' | 'fast_nl_means' | 'gaussian' | 'none';
-  sharpen_strength: number;    // 0 to 2.5
-  sharpen_radius: number;      // 0.5 to 5.0
+  sharpen_strength: number;
+  sharpen_radius: number;
+  crater_clarity: number;
   monochrome_output: boolean;
-  space_bg_cleanup?: boolean;  // 3-zone soft lunar mask & deep-space noise stabilization
+  space_bg_cleanup?: boolean;
   suppress_background_artifacts?: boolean;
   background_smoothing?: number;
 }

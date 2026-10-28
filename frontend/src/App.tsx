@@ -36,6 +36,7 @@ const DEFAULT_PARAMS: EnhancementParameters = {
   denoise_method: 'bilateral',
   sharpen_strength: 0.95,
   sharpen_radius: 1.2,
+  crater_clarity: 1.25,
   monochrome_output: false,
   space_bg_cleanup: true
 };
@@ -43,23 +44,23 @@ const DEFAULT_PARAMS: EnhancementParameters = {
 const STUDIO_PRESETS: Record<string, { name: string; subtitle: string; params: EnhancementParameters }> = {
   eclipse_master: {
     name: 'Eclipse & Blood Moon',
-    subtitle: 'Rich Maria & 0.0 DN Velvet Space',
-    params: { ...DEFAULT_PARAMS, clahe_clip_limit: 2.8, sharpen_strength: 0.95, shadow_boost: 8, contrast: 1.08, gamma: 0.98, space_bg_cleanup: true }
+    subtitle: 'Rich Maria & 0.00 DN Velvet Space',
+    params: { ...DEFAULT_PARAMS, clahe_clip_limit: 2.8, sharpen_strength: 0.95, crater_clarity: 1.25, shadow_boost: 8, contrast: 1.08, gamma: 0.98, space_bg_cleanup: true }
   },
   psr_shadow: {
     name: 'PSR Deep Shadow',
     subtitle: 'Terminator Crater Floor Recovery',
-    params: { ...DEFAULT_PARAMS, clahe_clip_limit: 3.6, sharpen_strength: 1.1, shadow_boost: 42, contrast: 1.12, gamma: 0.84, space_bg_cleanup: true }
+    params: { ...DEFAULT_PARAMS, clahe_clip_limit: 3.6, sharpen_strength: 1.1, crater_clarity: 1.45, shadow_boost: 42, contrast: 1.12, gamma: 0.84, space_bg_cleanup: true }
   },
   tycho_crisp: {
-    name: 'Tycho Ray Crisp',
+    name: 'Tycho Ray Micro-Relief',
     subtitle: 'High-Definition Ejecta & Rims',
-    params: { ...DEFAULT_PARAMS, clahe_clip_limit: 3.3, sharpen_strength: 1.55, sharpen_radius: 1.1, shadow_boost: 12, contrast: 1.16, gamma: 0.96, space_bg_cleanup: true }
+    params: { ...DEFAULT_PARAMS, clahe_clip_limit: 3.3, sharpen_strength: 1.55, sharpen_radius: 1.1, crater_clarity: 1.85, shadow_boost: 12, contrast: 1.16, gamma: 0.96, space_bg_cleanup: true }
   },
   lroc_mono: {
     name: 'LROC Albedo Mono',
     subtitle: 'Single-Band Calibrated Photometry',
-    params: { ...DEFAULT_PARAMS, clahe_clip_limit: 3.0, sharpen_strength: 1.15, shadow_boost: 15, contrast: 1.14, gamma: 0.95, monochrome_output: true, space_bg_cleanup: true }
+    params: { ...DEFAULT_PARAMS, clahe_clip_limit: 3.0, sharpen_strength: 1.15, crater_clarity: 1.35, shadow_boost: 15, contrast: 1.14, gamma: 0.95, monochrome_output: true, space_bg_cleanup: true }
   }
 };
 
@@ -77,7 +78,6 @@ export const App: React.FC = () => {
   const [isDraggingSlider, setIsDraggingSlider] = useState<boolean>(false);
   const [zoom, setZoom] = useState<number>(1.0);
 
-  // Optical Loupe state
   const [loupeEnabled, setLoupeEnabled] = useState<boolean>(true);
   const [loupeState, setLoupeState] = useState<{ visible: boolean; x: number; y: number; normX: number; normY: number }>({
     visible: false,
@@ -87,7 +87,6 @@ export const App: React.FC = () => {
     normY: 0.5
   });
 
-  // Loading & UI state
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [isBackendHealthy, setIsBackendHealthy] = useState<boolean>(false);
@@ -95,7 +94,6 @@ export const App: React.FC = () => {
   const [notificationMsg, setNotificationMsg] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
 
-  // Modals
   const [samples, setSamples] = useState<VerifiedSample[]>([]);
   const [isSamplesOpen, setIsSamplesOpen] = useState<boolean>(false);
   const [isSpecOpen, setIsSpecOpen] = useState<boolean>(false);
@@ -107,7 +105,6 @@ export const App: React.FC = () => {
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestRequestIdRef = useRef<number>(0);
 
-  // Initial boot
   useEffect(() => {
     let isMounted = true;
     async function init() {
@@ -129,7 +126,9 @@ export const App: React.FC = () => {
           }
         }
       } catch {
-        // Handled gracefully with fallback
+        if (isMounted) {
+          setErrorMsg('Unable to reach backend engine. Check VITE_API_URL or backend process.');
+        }
       }
     }
     init();
@@ -192,7 +191,6 @@ export const App: React.FC = () => {
     reader.onload = async (e) => {
       const url = e.target?.result as string;
       if (url) {
-        // Immediate visual feedback before backend network processing
         setOriginalSrc(url);
         setEnhancedSrc(url);
         const localId = 'upload-' + Date.now();
@@ -243,7 +241,7 @@ export const App: React.FC = () => {
         triggerEnhancement(res.image_id, params);
         setNotificationMsg(`Loaded ${file.name} (${res.dimensions.width}×${res.dimensions.height} px)`);
       } catch (err: any) {
-        console.warn('Backend upload failed, operating in client fallback mode:', err);
+        console.warn('Backend upload failed, staying in client preview mode:', err);
       } finally {
         setIsUploading(false);
       }
@@ -308,7 +306,6 @@ export const App: React.FC = () => {
     }
   };
 
-  // Interactive Split Curtain & Optical Loupe Mouse Handler
   const handleViewportMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!viewportRef.current) return;
     const rect = viewportRef.current.getBoundingClientRect();
@@ -338,14 +335,12 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('mouseup', stopDrag);
   }, []);
 
-  // Build SVG Spline Path for 256-bin Histogram
   const histogramPaths = useMemo(() => {
     const origBins = telemetry?.original_stats?.histogram_256 || uploadInfo?.original_stats?.histogram_256;
     const enhBins = telemetry?.enhanced_stats?.histogram_256;
     if (!origBins) return null;
 
     const buildSpline = (bins: number[]) => {
-      // Normalize against non-background lunar surface peak (bins 8..252) so deep-space spike doesn't flatten the curve
       const surfaceMax = Math.max(1, ...bins.slice(8, 252));
       const pts: [number, number][] = [];
       for (let i = 0; i < 256; i += 4) {
@@ -379,7 +374,6 @@ export const App: React.FC = () => {
         if (e.dataTransfer.files?.length) processFileUpload(e.dataTransfer.files[0]);
       }}
     >
-      {/* Subtle Ambient Corona Background */}
       <div
         className="absolute inset-0 pointer-events-none z-0"
         style={{
@@ -395,9 +389,7 @@ export const App: React.FC = () => {
         onChange={(e) => e.target.files?.[0] && processFileUpload(e.target.files[0])}
       />
 
-      {/* TOP FLOATING LUXURY STUDIO NAVIGATION BAR */}
       <header className="relative z-30 pt-4 px-6 flex items-center justify-between">
-        {/* Left Crest */}
         <div className="luxury-glass rounded-full px-4 py-2 flex items-center space-x-3">
           <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-500/30 via-rose-500/20 to-white/20 border border-white/20 flex items-center justify-center">
             <span className="w-2.5 h-2.5 rounded-full bg-[#e2c792] shadow-[0_0_8px_#e2c792]" />
@@ -410,12 +402,11 @@ export const App: React.FC = () => {
           <div className="hidden sm:flex items-center space-x-1.5 text-[11px] font-mono">
             <span className={`w-1.5 h-1.5 rounded-full ${isBackendHealthy ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`} />
             <span className="text-slate-300">
-              {params.space_bg_cleanup ? '3-Zone Space Mask Active' : 'Unmasked Global Mode'}
+              {params.space_bg_cleanup ? '3-Zone 0.00 DN Space Floor' : 'Unmasked Mode'}
             </span>
           </div>
         </div>
 
-        {/* Center Viewport Mode Island */}
         <div className="luxury-glass rounded-full p-1 flex items-center space-x-1">
           {([
             { id: 'split', label: 'Split Curtain', icon: Sliders },
@@ -452,7 +443,6 @@ export const App: React.FC = () => {
           </button>
         </div>
 
-        {/* Right Actions Island */}
         <div className="luxury-glass rounded-full p-1.5 flex items-center space-x-2">
           <button
             onClick={() => setIsSamplesOpen(true)}
@@ -486,11 +476,8 @@ export const App: React.FC = () => {
         </div>
       </header>
 
-      {/* MAIN STUDIO WORKSPACE */}
       <main className="flex-1 flex overflow-hidden relative z-10 px-6 pb-5 pt-3 gap-5">
-        {/* LEFT/CENTER OPTICAL VIEWPORT */}
         <div className="flex-1 flex flex-col relative rounded-3xl overflow-hidden border border-white/[0.07] bg-black/80 shadow-[0_30px_90px_rgba(0,0,0,0.9)]">
-          {/* Top-Left Floating Target Telemetry Pill */}
           <div className="absolute top-4 left-4 z-20 flex items-center space-x-2 pointer-events-none">
             <div className="luxury-glass-subtle rounded-full px-3.5 py-1.5 flex items-center space-x-2.5 text-[11px] font-mono">
               <span className="text-slate-400">TARGET</span>
@@ -510,12 +497,11 @@ export const App: React.FC = () => {
             </div>
             {isProcessing && (
               <div className="luxury-glass rounded-full px-3 py-1 text-[11px] font-mono text-[#e2c792] animate-pulse">
-                Computing 32-Bit Float Radiometry...
+                Computing 32-Bit Float Crater Relief...
               </div>
             )}
           </div>
 
-          {/* Top-Right Zoom Pill */}
           <div className="absolute top-4 right-4 z-20 luxury-glass-subtle rounded-full p-1 flex items-center space-x-1">
             <button
               onClick={() => setZoom((z) => Math.max(1.0, z - 0.25))}
@@ -538,7 +524,6 @@ export const App: React.FC = () => {
             </button>
           </div>
 
-          {/* Interactive Viewport Container */}
           <div
             ref={viewportRef}
             onMouseMove={handleViewportMouseMove}
@@ -567,7 +552,7 @@ export const App: React.FC = () => {
                       style={{ transform: `scale(${zoom})` }}
                     />
                     <span className="absolute bottom-3 right-3 luxury-glass-subtle rounded-full px-3 py-1 text-[10px] font-mono text-[#e2c792] uppercase">
-                      STUDIO 2.0 ENHANCED
+                      CRATER-ENHANCED STUDIO MASTER
                     </span>
                   </div>
                 </div>
@@ -576,14 +561,12 @@ export const App: React.FC = () => {
                   className="relative w-full h-full flex items-center justify-center transition-transform duration-100"
                   style={{ transform: `scale(${zoom})` }}
                 >
-                  {/* Base Layer: Enhanced Master (falls back to originalSrc) */}
                   <img
                     src={viewMode === 'original' ? originalSrc : (enhancedSrc || originalSrc)}
-                    alt="Lunar target"
+                    alt="Lunar Master"
                     className="max-h-[75vh] w-auto max-w-full object-contain select-none pointer-events-none drop-shadow-2xl"
                   />
 
-                  {/* Clipped Top Layer: Raw Sensor (in Split Mode) */}
                   {viewMode === 'split' && (
                     enhancedSrc && enhancedSrc !== originalSrc ? (
                       <>
@@ -598,7 +581,6 @@ export const App: React.FC = () => {
                           />
                         </div>
 
-                        {/* Split Curtain Line */}
                         <div
                           onMouseDown={(e) => { e.stopPropagation(); setIsDraggingSlider(true); }}
                           className="absolute top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-white/90 to-transparent z-20 cursor-ew-resize"
@@ -613,7 +595,7 @@ export const App: React.FC = () => {
                       <div className="absolute bottom-16 z-20 pointer-events-none">
                         <div className="luxury-glass px-4 py-1.5 rounded-full text-xs font-mono text-[#e2c792] flex items-center space-x-2 animate-pulse">
                           <span className="w-2 h-2 rounded-full bg-[#e2c792] animate-ping" />
-                          <span>Enhancing lunar features...</span>
+                          <span>Enhancing lunar crater relief...</span>
                         </div>
                       </div>
                     ) : null
@@ -623,11 +605,10 @@ export const App: React.FC = () => {
             ) : (
               <div className="text-center space-y-3">
                 <UploadCloud className="w-12 h-12 text-slate-500 mx-auto" />
-                <p className="text-sm text-slate-300">Drop a lunar photograph or select a NASA sample to begin</p>
+                <p className="text-sm text-slate-300">Drop a lunar photograph or choose a sample to inspect crater relief</p>
               </div>
             )}
 
-            {/* 3x Optical Magnifier Loupe */}
             {loupeState.visible && originalSrc && (
               <div
                 className="fixed w-48 h-48 rounded-full border border-[#e2c792]/80 shadow-[0_20px_50px_rgba(0,0,0,0.95),0_0_20px_rgba(226,199,146,0.25)] pointer-events-none z-50 overflow-hidden bg-black"
@@ -648,20 +629,18 @@ export const App: React.FC = () => {
               </div>
             )}
 
-            {/* Bottom Corner Badges */}
             {viewMode === 'split' && originalSrc && (
               <>
                 <div className="absolute bottom-4 left-4 z-20 luxury-glass-subtle rounded-full px-3.5 py-1 text-[10px] font-mono tracking-widest uppercase text-slate-300 pointer-events-none">
                   RAW SENSOR INPUT
                 </div>
                 <div className="absolute bottom-4 right-4 z-20 luxury-glass-subtle rounded-full px-3.5 py-1 text-[10px] font-mono tracking-widest uppercase text-[#e2c792] border border-[#e2c792]/30 pointer-events-none">
-                  STUDIO 2.0 ENHANCED (0.0 DN SPACE FLOOR)
+                  CRATER-ENHANCED (0.00 DN SPACE FLOOR)
                 </div>
               </>
             )}
           </div>
 
-          {/* BOTTOM DOCK: LIVE SPLINE WAVEFORM */}
           <div className="h-32 border-t border-white/[0.07] bg-[#07090e]/90 backdrop-blur-xl px-5 py-3 flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
@@ -674,7 +653,7 @@ export const App: React.FC = () => {
                 </span>
                 <span className="flex items-center space-x-1.5 text-[10px] font-mono text-[#e2c792]">
                   <span className="w-2 h-2 rounded-full bg-[#e2c792]" />
-                  <span>3-Zone Masked Output</span>
+                  <span>3-Zone Crater Enhanced</span>
                 </span>
               </div>
               {telemetry && (
@@ -682,7 +661,7 @@ export const App: React.FC = () => {
                   <div>
                     <span className="text-slate-500">MODE:</span>
                     <span className="text-emerald-400 ml-1">
-                      {telemetry.segmentation_mode === 'isolated_body' ? '3-Zone Lunar Disc' : 'Surface Terrain'}
+                      {telemetry.segmentation_mode === 'isolated_body' ? '3-Zone Lunar Body' : 'Surface Terrain'}
                     </span>
                   </div>
                   <div>
@@ -692,9 +671,9 @@ export const App: React.FC = () => {
                     </span>
                   </div>
                   <div>
-                    <span className="text-slate-500">STD DEV (σ):</span>
+                    <span className="text-slate-500">MICRO-RELIEF BOOST:</span>
                     <span className="text-[#e2c792] ml-1">
-                      {telemetry.original_stats.std_dev} → {telemetry.enhanced_stats.std_dev}
+                      {params.crater_clarity.toFixed(2)}×
                     </span>
                   </div>
                 </div>
@@ -725,22 +704,21 @@ export const App: React.FC = () => {
                 </svg>
               )}
               <div className="absolute bottom-1 inset-x-3 flex justify-between text-[9px] font-mono text-slate-500 pointer-events-none">
-                <span>0 DN (Deep Space)</span>
+                <span>0.00 DN (Space Floor)</span>
                 <span>64 DN (Terminator)</span>
-                <span>128 DN (Maria)</span>
+                <span>128 DN (Maria Basin)</span>
                 <span>192 DN (Highlands)</span>
-                <span>255 DN (Crater Rays)</span>
+                <span>255 DN (Crater Peaks)</span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* RIGHT FLOATING LUXURY STUDIO CONSOLE */}
         <aside className="w-80 lg:w-96 luxury-glass rounded-3xl flex flex-col h-full overflow-hidden">
           <div className="px-5 py-4 border-b border-white/[0.07] flex items-center justify-between">
             <div>
-              <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-white">Optical Grading Suite</h2>
-              <p className="text-[11px] text-slate-400 mt-0.5">32-Bit Float Radiometric Engine</p>
+              <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-white">Crater & Surface Grading</h2>
+              <p className="text-[11px] text-slate-400 mt-0.5">Micro-Relief Band-Pass Radiometry</p>
             </div>
             <button
               onClick={handleReset}
@@ -752,11 +730,10 @@ export const App: React.FC = () => {
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-            {/* Optical Presets */}
             <div>
               <div className="flex items-center justify-between mb-2.5">
                 <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-[#e2c792]">
-                  Calibrated Optical Profiles
+                  Calibrated Profiles
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-2">
@@ -780,12 +757,11 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            {/* 3-Zone Space Background Protection Toggle */}
             <div className="p-3.5 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-transparent to-transparent border border-emerald-500/25 flex items-center justify-between">
               <div className="pr-2">
-                <div className="text-xs font-medium text-white">3-Zone Space Masking</div>
+                <div className="text-xs font-medium text-white">3-Zone 0.00 DN Masking</div>
                 <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
-                  Isolates lunar disc & corona; locks deep space to pure 0.0 DN without blotches.
+                  Locks space background to pure black; isolates crater textures without edge halos.
                 </p>
               </div>
               <button
@@ -802,10 +778,25 @@ export const App: React.FC = () => {
               </button>
             </div>
 
-            {/* Section 1: Local Contrast & Micro-Relief */}
             <div className="space-y-3.5 pt-1 border-t border-white/[0.06]">
-              <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-slate-400">
-                1. Local Contrast & Micro-Relief
+              <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-[#e2c792]">
+                1. Lunar Crater & Texture Relief
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-200 font-medium">Crater Clarity (Micro-Relief)</span>
+                  <span className="font-mono text-[#e2c792] font-semibold">{params.crater_clarity.toFixed(2)}×</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.1"
+                  max="3.0"
+                  step="0.05"
+                  value={params.crater_clarity}
+                  onChange={(e) => updateParam('crater_clarity', parseFloat(e.target.value))}
+                  className="studio-slider"
+                />
               </div>
 
               <div className="space-y-1.5">
@@ -826,23 +817,7 @@ export const App: React.FC = () => {
 
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-300">CLAHE Contextual Grid</span>
-                  <span className="font-mono text-[#e2c792]">{params.clahe_grid_size}×{params.clahe_grid_size}</span>
-                </div>
-                <input
-                  type="range"
-                  min="4"
-                  max="24"
-                  step="2"
-                  value={params.clahe_grid_size}
-                  onChange={(e) => updateParam('clahe_grid_size', parseInt(e.target.value, 10))}
-                  className="studio-slider"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-300">Halo-Free Micro Sharpening</span>
+                  <span className="text-slate-300">Rim Micro-Sharpening</span>
                   <span className="font-mono text-[#e2c792]">{params.sharpen_strength.toFixed(2)}</span>
                 </div>
                 <input
@@ -857,15 +832,14 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Section 2: Radiometric Tone Curve */}
             <div className="space-y-3.5 pt-3 border-t border-white/[0.06]">
               <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-slate-400">
-                2. Radiometric Tone Curve
+                2. Surface Tone & Shadows
               </div>
 
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-300">Shadow / PSR Lift (Core Only)</span>
+                  <span className="text-slate-300">Shadow / Crater Floor Lift</span>
                   <span className="font-mono text-[#e2c792]">{params.shadow_boost}%</span>
                 </div>
                 <input
@@ -913,7 +887,7 @@ export const App: React.FC = () => {
 
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-300">Denoise Filtering ({params.denoise_method})</span>
+                  <span className="text-slate-300">Edge-Preserving Denoise</span>
                   <span className="font-mono text-[#e2c792]">{params.denoise_strength}</span>
                 </div>
                 <input
@@ -928,7 +902,6 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Section 3: Spectral Mode */}
             <div className="space-y-3 pt-3 border-t border-white/[0.06]">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-300">Single-Band Monochrome View</span>
@@ -943,13 +916,12 @@ export const App: React.FC = () => {
           </div>
 
           <div className="px-5 py-3 border-t border-white/[0.07] bg-black/40 text-[10px] font-mono text-slate-400 flex items-center justify-between">
-            <span>ZERO GENERATIVE HALLUCINATION</span>
-            <span className="text-emerald-400">100% DETERMINISTIC</span>
+            <span>ZERO SYNTHETIC HALLUCINATION</span>
+            <span className="text-emerald-400">DETERMINISTIC CV</span>
           </div>
         </aside>
       </main>
 
-      {/* NASA TARGET SAMPLES MODAL */}
       {isSamplesOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="luxury-glass rounded-3xl max-w-2xl w-full p-6 space-y-4 border border-white/15">
@@ -978,7 +950,6 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* OPTICAL SPECIFICATION MODAL */}
       {isSpecOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="luxury-glass rounded-3xl max-w-xl w-full p-6 space-y-4 border border-white/15">
@@ -992,23 +963,22 @@ export const App: React.FC = () => {
             </div>
             <div className="space-y-3 text-xs text-slate-300 leading-relaxed">
               <p>
-                <strong>3-Zone Soft Lunar Masking:</strong> Separates the inner lunar surface core, the feathered atmospheric limb corona, and deep space so local contrast (CLAHE) and unsharp masking never amplify background JPEG block noise or create bright edge ringing.
+                <strong>Multi-Scale Crater Clarity:</strong> Isolates subtle micro-craters, rilles, and ejecta rays using a 3x3 high-pass and 9x9 unsharp band-pass filter, applying non-linear contrast to mid-tone topography.
               </p>
               <p>
-                <strong>32-Bit Floating-Point Blending:</strong> All tone expansion, gamma, contrast, and multi-scale coring sharpening execute in continuous 32-bit float space before a single final quantization step.
+                <strong>3-Zone 0.00 DN Space Masking:</strong> Separates the core lunar surface, the feathered limb/corona, and the cosmic background, locking empty space to 0.00 DN without JPEG block noise or artificial edge ringing.
               </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* EXPORT MASTER MODAL */}
       {isExportOpen && activeImageId && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="luxury-glass rounded-3xl max-w-md w-full p-6 space-y-4 border border-white/15">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-white">
-                Export Calibrated Master
+                Export Master Image
               </h3>
               <button onClick={() => setIsExportOpen(false)} className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
@@ -1044,7 +1014,6 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Drag Overlay */}
       {isDraggingOver && (
         <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl border-2 border-dashed border-[#e2c792] flex flex-col items-center justify-center">
           <UploadCloud className="w-14 h-14 text-[#e2c792] mb-3 animate-bounce" />
@@ -1052,7 +1021,6 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Alerts */}
       {errorMsg && (
         <div className="fixed bottom-5 right-5 z-50 luxury-glass border border-rose-500/40 text-rose-200 px-4 py-3 rounded-2xl flex items-center space-x-3 text-xs">
           <AlertCircle className="w-4 h-4 text-rose-400" />
