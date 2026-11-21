@@ -681,6 +681,63 @@ export const apiService = {
     return `${API_BASE_URL}/download/${imageId}?format=${format}`;
   },
 
+  downloadImageFile: async (imageId: string, format: string = 'PNG', fallbackDataUrl?: string | null): Promise<void> => {
+    const isClientOnly = !imageId || imageId.startsWith('upload-');
+    if (!isClientOnly) {
+      try {
+        const downloadUrl = `${API_BASE_URL}/download/${imageId}?format=${format}`;
+        const res = await fetch(downloadUrl);
+        if (res.ok) {
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          const ext = format === 'TIFF' ? 'tif' : (format.toUpperCase() === 'JPEG' ? 'jpg' : format.toLowerCase());
+          link.download = `lunarvision_enhanced_${imageId.slice(0, 8)}.${ext}`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+          return;
+        }
+      } catch (err) {
+        console.warn('Backend download failed, falling back to local client export:', err);
+      }
+    }
+
+    const sourceDataUrl = fallbackDataUrl || IMAGE_DATA_CACHE.get(`${imageId}_enhanced`) || IMAGE_DATA_CACHE.get(imageId);
+    if (!sourceDataUrl) {
+      throw new Error('No image data available for export');
+    }
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('Failed to load image for export'));
+      img.src = sourceDataUrl;
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth || img.width;
+    canvas.height = img.naturalHeight || img.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas context unavailable');
+    ctx.drawImage(img, 0, 0);
+
+    const mime = (format.toUpperCase() === 'JPEG' || format.toUpperCase() === 'JPG') ? 'image/jpeg' : format.toUpperCase() === 'WEBP' ? 'image/webp' : 'image/png';
+    const quality = (format.toUpperCase() === 'JPEG' || format.toUpperCase() === 'JPG') ? 0.96 : undefined;
+    const exportDataUrl = canvas.toDataURL(mime, quality);
+
+    const link = document.createElement('a');
+    link.href = exportDataUrl;
+    const ext = format === 'TIFF' ? 'png' : (format.toLowerCase() === 'jpeg' ? 'jpg' : format.toLowerCase());
+    link.download = `lunarvision_enhanced_${Date.now()}.${ext}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  },
+
   getTelemetry: async (imageId: string): Promise<TelemetryResponse> => {
     try {
       return await requestJson<TelemetryResponse>(`${API_BASE_URL}/image/${imageId}/telemetry`);

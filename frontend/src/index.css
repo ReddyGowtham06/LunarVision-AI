@@ -5,73 +5,152 @@
 @layer base {
   :root {
     color-scheme: dark;
+    /* 60% Foundation: Lunar Obsidian */
+    --color-obsidian: #0B0F14;
+    --color-obsidian-deep: #070A0E;
+    --color-obsidian-elevated: #10161E;
+
+    /* 30% Secondary Surfaces: Moonstone Slate */
+    --color-moonstone-slate: #303944;
+    --color-moonstone-border: rgba(48, 57, 68, 0.85);
+    --color-moonstone-glass: rgba(48, 57, 68, 0.55);
+    --color-moonstone-surface: rgba(28, 34, 42, 0.88);
+
+    /* 10% Accent: Eclipse Gold */
+    --color-eclipse-gold: #D6B66F;
+    --color-eclipse-hover: #E2C889;
+    --color-eclipse-subtle: rgba(214, 182, 111, 0.15);
+    --color-eclipse-border: rgba(214, 182, 111, 0.35);
+
+    /* Typography */
+    --color-text-primary: #F4F6F8;
+    --color-text-secondary: #9BA3AF;
+    --color-text-muted: #6B7684;
   }
+
   body {
-    background-color: #020305;
-    color: #f1f5f9;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: var(--color-obsidian);
+    color: var(--color-text-primary);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     margin: 0;
     padding: 0;
-    overflow: hidden;
+    overflow-x: hidden;
     user-select: none;
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
+/* 30% Secondary Surfaces - Moonstone Glass Panels */
 .luxury-glass {
-  background: rgba(10, 13, 20, 0.68);
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  background: rgba(30, 36, 44, 0.82);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid rgba(48, 57, 68, 0.8);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .luxury-glass-subtle {
-  background: rgba(14, 18, 28, 0.52);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  background: rgba(22, 28, 35, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(48, 57, 68, 0.6);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
+/* 10% Accent - Eclipse Pill & Buttons */
 .luxury-pill-active {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.06));
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  background: rgba(214, 182, 111, 0.16);
+  border: 1px solid rgba(214, 182, 111, 0.45);
+  color: #D6B66F;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(214, 182, 111, 0.2);
 }
 
+.eclipse-gold-action {
+  background: #D6B66F;
+  color: #0B0F14;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 12px rgba(214, 182, 111, 0.25);
+}
+
+.eclipse-gold-action:hover:not(:disabled) {
+  background: #E2C889;
+  box-shadow: 0 4px 18px rgba(214, 182, 111, 0.4);
+}
+
+.eclipse-gold-action:active:not(:disabled) {
+  background: #C2A056;
+}
+
+/* Studio Sliders - Optimized for Desktop & Touch */
 input[type="range"].studio-slider {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.1);
+  height: 6px;
+  background: #1C232B;
+  border: 1px solid rgba(48, 57, 68, 0.7);
   border-radius: 999px;
   outline: none;
   transition: background 0.2s;
+  touch-action: pan-x;
 }
 
 input[type="range"].studio-slider:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: #252D37;
 }
 
 input[type="range"].studio-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: #f8fafc;
-  border: 2px solid #020305;
-  box-shadow: 0 0 10px rgba(255, 255, 255, 0.6), 0 2px 4px rgba(0, 0, 0, 0.8);
+  background: #D6B66F;
+  border: 2px solid #0B0F14;
+  box-shadow: 0 0 8px rgba(214, 182, 111, 0.4), 0 2px 4px rgba(0, 0, 0, 0.8);
   cursor: pointer;
   transition: transform 0.15s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.15s;
 }
 
-input[type="range"].studio-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.22);
-  background: #e2c792;
+input[type="range"].studio-slider::-webkit-slider-thumb:hover,
+input[type="range"].studio-slider::-webkit-slider-thumb:active {
+  transform: scale(1.2);
+  background: #E2C889;
+  box-shadow: 0 0 12px rgba(214, 182, 111, 0.65);
 }
 
+/* Touch-optimized slider for mobile */
+input[type="range"].mobile-touch-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  background: #1C232B;
+  border: 1px solid rgba(48, 57, 68, 0.8);
+  border-radius: 999px;
+  outline: none;
+  touch-action: pan-x;
+}
+
+input[type="range"].mobile-touch-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #D6B66F;
+  border: 3px solid #0B0F14;
+  box-shadow: 0 0 10px rgba(214, 182, 111, 0.5), 0 2px 6px rgba(0, 0, 0, 0.7);
+  cursor: pointer;
+}
+
+input[type="range"].mobile-touch-slider::-webkit-slider-thumb:active {
+  transform: scale(1.15);
+  background: #E2C889;
+}
+
+/* Discrete Scrollbar */
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;
@@ -80,9 +159,14 @@ input[type="range"].studio-slider::-webkit-slider-thumb:hover {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(48, 57, 68, 0.8);
   border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.28);
+  background: rgba(214, 182, 111, 0.4);
+}
+
+/* Touch action utilities */
+.touch-pan-zoom {
+  touch-action: none;
 }

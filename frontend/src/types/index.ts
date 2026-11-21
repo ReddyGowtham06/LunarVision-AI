@@ -104,3 +104,7 @@ export interface TelemetryResponse {
 }
 
 export type ViewMode = 'split' | 'side_by_side' | 'enhanced' | 'original' | 'enhanced_only' | 'original_only';
+
+export type MobileTab = 'workspace' | 'enhance' | 'targets' | 'export';
+export type ExportFormat = 'PNG' | 'JPEG' | 'TIFF' | 'WEBP';
+
